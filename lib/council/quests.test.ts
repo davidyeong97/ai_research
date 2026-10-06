@@ -57,7 +57,7 @@ describe("quest cost persistence", () => {
     await done;
     const events: Array<{ action: string; data: Record<string, unknown> }> = [];
     bus.subscribe(questId, 0, (e) => events.push(e as never));
-    const n = plan.executionPlan.assignedAgents.length;
+    const n = plan.executionPlan.assignedAgents.length * plan.executionPlan.maxRounds + 1;
 
     const rows = db
       .select()
