@@ -1,6 +1,6 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { streamText } from "ai";
-import type { LLMChunk, LLMClient, StreamChatParams } from "./types";
+import type { Citation, LLMChunk, LLMClient, StreamChatParams } from "./types";
 
 export interface OpenRouterClientOptions {
   /** Defaults to process.env.OPENROUTER_API_KEY. Server-side only. */
@@ -17,13 +17,14 @@ export class OpenRouterClient implements LLMClient {
   }
 
   async *streamChat(params: StreamChatParams): AsyncIterable<LLMChunk> {
-    const { messages, models, maxTokens, reasoning, signal } = params;
+    const { messages, models, maxTokens, reasoning, signal, webSearch } = params;
     if (models.length === 0) throw new Error("streamChat requires at least one model");
     const [primary, ...fallbacks] = models;
 
     const model = this.provider.chat(primary, {
       usage: { include: true },
       ...(fallbacks.length > 0 ? { models: [primary, ...fallbacks] } : {}),
+      ...(webSearch ? { plugins: [{ id: "web" as const, max_results: webSearch.maxResults }] } : {}),
       ...(reasoning
         ? {
             reasoning:
@@ -42,11 +43,16 @@ export class OpenRouterClient implements LLMClient {
       onError: () => {},
     });
 
+    const citations: Citation[] = [];
     for await (const part of result.fullStream) {
       if (part.type === "text-delta") {
         yield { type: "text", delta: part.text };
       } else if (part.type === "reasoning-delta") {
         yield { type: "reasoning", delta: part.text };
+      } else if (part.type === "source") {
+        if (part.sourceType === "url" && !citations.some((c) => c.url === part.url)) {
+          citations.push({ url: part.url, ...(part.title ? { title: part.title } : {}) });
+        }
       } else if (part.type === "error") {
         throw part.error instanceof Error ? part.error : new Error(String(part.error));
       }
@@ -61,6 +67,7 @@ export class OpenRouterClient implements LLMClient {
     const or = providerMetadata?.openrouter as
       { usage?: { promptTokens?: number; completionTokens?: number; cost?: number } } | undefined;
 
+    if (citations.length > 0) yield { type: "citations", citations };
     if (modelUsed !== primary) {
       yield { type: "fallback", primary, modelUsed };
     }

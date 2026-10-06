@@ -183,3 +183,41 @@ describe("runDebate", () => {
     expect(llm.calls[3].messages[0].content).toBe("custom r2 scout-1");
   });
 });
+
+describe("runDebate web search", () => {
+  const searchPlan = (rounds: number, complexity: number) => {
+    const p = makePlan(rounds);
+    p.complexityScore = complexity;
+    p.executionPlan.toolsAllowed = ["web_search"];
+    return p;
+  };
+  const mk = () =>
+    new MockLLMClient(() => ({
+      text: "ok",
+      citations: [
+        { url: "https://a.example/x", title: "A <b>" },
+        { url: "javascript:alert(1)", title: "bad" },
+      ],
+    }));
+
+  it("searches only in round 1 for complexity < 5", async () => {
+    const llm = mk();
+    const { events } = await run(searchPlan(2, 3), llm);
+    const searching = events.filter((e) => e.action === "SEARCHING");
+    expect(searching.map((e) => e.round)).toEqual([1, 1]);
+    expect(searching[0].data).toMatchObject({ statusMessage: "Searching the web…" });
+    expect(llm.calls.filter((c) => c.webSearch)).toHaveLength(2);
+    expect(llm.calls[0].webSearch).toEqual({ maxResults: 3 });
+    const sp = events.find((e) => e.action === "SPEAKING")!;
+    expect(sp.data.citations).toEqual([{ url: "https://a.example/x", title: "A &lt;b&gt;" }]);
+  });
+
+  it("searches every round for complexity 5, and not without the tool", async () => {
+    const { events } = await run(searchPlan(2, 5), mk());
+    expect(events.filter((e) => e.action === "SEARCHING")).toHaveLength(4);
+    const llm = mk();
+    const r = await run(makePlan(1), llm);
+    expect(r.events.some((e) => e.action === "SEARCHING")).toBe(false);
+    expect(llm.calls.some((c) => c.webSearch)).toBe(false);
+  });
+});

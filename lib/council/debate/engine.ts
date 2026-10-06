@@ -6,6 +6,7 @@ import { BudgetExceeded, BudgetTracker, CostCapExceeded, costCapFromEnv } from "
 import type { EventBus } from "../bus";
 import type { ChatMessage, LLMClient, LLMUsage } from "../llm";
 import { LEAD_MODELS } from "../roster";
+import { sanitizeText } from "./sanitize";
 import {
   buildAgentPrompt,
   buildSynthesisPrompt,
@@ -48,6 +49,29 @@ const AGENT_MAX_TOKENS = 400;
 const SYNTHESIS_MAX_TOKENS = 700;
 const SUMMARY_MAX_TOKENS = 500; // ~400-token target plus headroom
 
+export const DEFAULT_WEB_SEARCH_MAX_RESULTS = 3;
+
+export function webSearchMaxResults(): number {
+  const n = Number(process.env.WEB_SEARCH_MAX_RESULTS);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_WEB_SEARCH_MAX_RESULTS;
+}
+
+/** Citations come from the open web: keep http(s) URLs only and sanitize titles. */
+function sanitizeCitations(list: { url: string; title?: string }[]) {
+  const out: { url: string; title?: string }[] = [];
+  for (const c of list) {
+    try {
+      const u = new URL(c.url);
+      if (u.protocol !== "http:" && u.protocol !== "https:") continue;
+      const title = c.title ? sanitizeText(c.title, { maxChars: 200 }) : undefined;
+      out.push({ url: u.toString().slice(0, 2000), ...(title ? { title } : {}) });
+    } catch {
+      /* skip invalid URL */
+    }
+  }
+  return out;
+}
+
 export async function runDebate(
   d: DebateDeps,
   questId: string,
@@ -65,6 +89,7 @@ export async function runDebate(
   const budget = new BudgetTracker(plan.budgetCapTokens, costCapFromEnv());
   const agents: DebateAgent[] = plan.executionPlan.assignedAgents;
   const maxRounds = Math.max(1, plan.executionPlan.maxRounds);
+  const searchEnabled = plan.executionPlan.toolsAllowed.includes("web_search");
   const history: HistoryEntry[] = [];
   let totalCostUsd = 0;
   let currentRound = 1;
@@ -96,6 +121,7 @@ export async function runDebate(
     maxTokens: number;
     rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY";
     extraData?: Record<string, unknown>;
+    webSearch?: { maxResults: number };
   }): Promise<string> {
     const { round, agentId, models, messages, maxTokens } = args;
     const promptEstimate = Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4);
@@ -104,11 +130,16 @@ export async function runDebate(
     let text = "";
     let reasoning = "";
     let usage: LLMUsage | undefined;
+    const citations: { url: string; title?: string }[] = [];
+    if (args.webSearch) {
+      emit(round, agentId, "SEARCHING", 0, { statusMessage: "Searching the web…" });
+    }
     const startedAt = Date.now();
-    for await (const c of d.llm.streamChat({ messages, models, maxTokens })) {
+    for await (const c of d.llm.streamChat({ messages, models, maxTokens, webSearch: args.webSearch })) {
       if (c.type === "text") text += c.delta;
       else if (c.type === "reasoning") reasoning += c.delta;
       else if (c.type === "usage") usage = c.usage;
+      else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
       else emit(round, agentId, "FALLBACK", 0, { primary: c.primary, modelUsed: c.modelUsed });
     }
     const latencyMs = Date.now() - startedAt;
@@ -140,6 +171,7 @@ export async function runDebate(
       // Surface what was spent even if recording breached a cap.
       emit(round, agentId, "SPEAKING", tokens, {
         ...args.extraData,
+        ...(args.webSearch ? { citations } : {}),
         message: text,
         costUsd,
         model: usage?.modelUsed ?? models[0],
@@ -197,6 +229,9 @@ export async function runDebate(
           messages,
           maxTokens: agentMax,
           rowAction: "SPEAKING",
+          webSearch: searchEnabled && (round === 1 || plan.complexityScore >= 5)
+            ? { maxResults: webSearchMaxResults() }
+            : undefined,
         });
         roundEntries.push({ round, agentId: agent.id, role: agent.role, text });
       }

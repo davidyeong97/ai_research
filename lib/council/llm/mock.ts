@@ -1,4 +1,4 @@
-import type { LLMChunk, LLMClient, LLMUsage, StreamChatParams } from "./types";
+import type { Citation, LLMChunk, LLMClient, LLMUsage, StreamChatParams } from "./types";
 
 export interface MockResponse {
   text?: string;
@@ -6,6 +6,8 @@ export interface MockResponse {
   /** Model that "served" the request; defaults to the primary model. */
   modelUsed?: string;
   usage?: Partial<Omit<LLMUsage, "modelUsed">>;
+  /** Emitted only when the request has webSearch set. */
+  citations?: Citation[];
   error?: Error;
 }
 
@@ -41,6 +43,9 @@ export class MockLLMClient implements LLMClient {
     for (const delta of text.match(/\S+\s*|\s+/g) ?? []) {
       if (params.signal?.aborted) return;
       yield { type: "text", delta };
+    }
+    if (params.webSearch && res.citations?.length) {
+      yield { type: "citations", citations: res.citations.slice(0, params.webSearch.maxResults) };
     }
     if (modelUsed !== primary) yield { type: "fallback", primary, modelUsed };
     const approx = (s: string) => Math.ceil(s.length / 4);
