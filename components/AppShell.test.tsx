@@ -64,6 +64,23 @@ describe("AppShell", () => {
     expect(document.getElementById("panel-arena")!.className).toContain("hidden");
   });
 
+  it("shows unread dot on stream tab and auto-switches on verdict", async () => {
+    render(<AppShell />);
+    fireEvent.change(screen.getByLabelText("Quest"), { target: { value: "q" } });
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const es = FakeEventSource.instances[0];
+    expect(screen.getByTestId("stats-bar")).toBeTruthy();
+    act(() => es.emit(mkEvent(1, "claude", "SPEAKING", { message: "one" })));
+    act(() => es.emit(mkEvent(2, "claude", "SPEAKING", { message: "two" })));
+    expect(screen.getByTestId("unread-dot")).toBeTruthy();
+    act(() => es.emit(mkEvent(3, "lead", "DONE", { finalAnswer: "Rome" })));
+    expect(
+      screen.getByRole("tab", { name: /Discussion Stream/ }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(screen.queryByTestId("unread-dot")).toBeNull();
+  });
+
   it("starts empty with Go disabled", () => {
     render(<AppShell />);
     expect(screen.queryAllByTestId("agent-card")).toHaveLength(0);

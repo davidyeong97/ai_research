@@ -28,7 +28,7 @@ export function ActionBar({
   const canInject = canControl && guidance.trim().length > 0;
   const canSubmit = !busy && query.trim().length > 0 && !!onSubmit;
   return (
-    <div className="flex-none space-y-2 border-t-4 border-amber-200/80 bg-indigo-950 px-3 pt-2 pb-2">
+    <div className="flex-none space-y-2 border-t-4 border-amber-200/80 bg-indigo-950 px-3 pt-2 pb-2 lg:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <form
         aria-label="Quest actions"
         onSubmit={(e) => {

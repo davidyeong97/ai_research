@@ -1,0 +1,72 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { StatsBar, derivePhase } from "./StatsBar";
+import { initialQuestState, questReducer, type QuestState } from "@/lib/client/questReducer";
+import { MOCK_PLAN } from "./mock-data";
+
+afterEach(cleanup);
+
+const ev = (id: number, round: number, action: string, data = {}, tokensUsed = 0) =>
+  ({
+    type: "event" as const,
+    event: {
+      id,
+      questId: "q1",
+      timestamp: "2026-10-06T10:00:00.000Z",
+      round,
+      agentId: "claude",
+      action,
+      tokensUsed,
+      data,
+    },
+  }) as unknown as Parameters<typeof questReducer>[1];
+
+function run(...actions: Parameters<typeof questReducer>[1][]): QuestState {
+  return actions.reduce(
+    questReducer,
+    questReducer(initialQuestState, { type: "start", questId: "q1", plan: MOCK_PLAN }),
+  );
+}
+
+describe("currentRound reducer field", () => {
+  it("tracks max round seen and ignores lower rounds", () => {
+    const s = run(ev(1, 1, "THINKING"), ev(2, 3, "THINKING"), ev(3, 2, "THINKING"));
+    expect(s.currentRound).toBe(3);
+  });
+});
+
+describe("StatsBar", () => {
+  it("renders nothing when idle", () => {
+    const { container } = render(<StatsBar state={initialQuestState} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("shows round, budget, cost and phase", () => {
+    const s = run(ev(1, 2, "SPEAKING", { message: "hi", costUsd: 0.25 }, 3000));
+    render(<StatsBar state={s} />);
+    expect(screen.getByTestId("stats-round").textContent).toContain(
+      `R 2/${MOCK_PLAN.executionPlan.maxRounds}`,
+    );
+    expect(screen.getByRole("meter").getAttribute("aria-valuenow")).toBe("10");
+    expect(screen.getByTestId("stats-cost").textContent).toBe("$0.250");
+    expect(screen.getByTestId("stats-phase").textContent).toBe("Debating");
+  });
+
+  it("derives phases", () => {
+    expect(derivePhase(run())).toBe("Planning");
+    expect(derivePhase(run(ev(1, 1, "THINKING"), ev(2, 1, "PAUSED", { paused: true })))).toBe(
+      "Paused",
+    );
+    expect(derivePhase(run(ev(1, 1, "DONE", { finalAnswer: "x", totalCostUsd: 1 })))).toBe(
+      "Verdict",
+    );
+    expect(derivePhase(run(ev(1, 1, "ERROR", { message: "x" })))).toBe("Error");
+  });
+
+  it("uses totalCostUsd once done", () => {
+    const s = run(ev(1, 1, "DONE", { finalAnswer: "x", totalCostUsd: 0.5, totalTokens: 100 }));
+    render(<StatsBar state={s} />);
+    expect(screen.getByTestId("stats-cost").textContent).toBe("$0.500");
+  });
+});
