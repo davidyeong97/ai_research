@@ -184,27 +184,46 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 
 ### Phase 1: Core Multi-LLM Adapter & Rate-Limiter Engine
 
-- [ ] Implement provider adapters (OpenAI, Anthropic, Google, xAI, Ollama) with unified response schemas.
-- [ ] Build rate-limiting bucket manager and cost/token tracking logic.
-- [ ] Build Orchestrator parsing logic & SSE streaming engine.
+- [x] Implement provider adapters with unified response schemas. _(All models are reached through a single OpenRouter adapter; direct OpenAI/Anthropic/Google/xAI/Ollama adapters are not implemented.)_
+- [x] Build cost/token tracking logic (`lib/council/budget`). _(A rate-limiting bucket manager is not implemented.)_
+- [x] Build Orchestrator parsing logic & SSE streaming engine.
 
 ### Phase 2: Discussion Protocol, Tools & HITL
 
-- [ ] Implement multi-turn debate loops and context truncation/summarization.
-- [ ] Add sandboxed web search and fact-checking tool pipelines.
-- [ ] Implement Human-In-The-Loop pause/resume/inject mechanisms.
+- [x] Implement multi-turn debate loops and context truncation/summarization.
+- [x] Add sandboxed web search tool pipeline.
+- [ ] Add fact-checking tool pipeline (the `FACT_CHECKING` event is defined but not yet emitted by the debate engine).
+- [x] Implement Human-In-The-Loop pause/resume/inject mechanisms.
 
 ### Phase 3: Game UI & Frontend Integration
 
-- [ ] Build pixel-art/2D sprite stage with status indicators and speech bubble components.
-- [ ] Connect real-time SSE stream state machine to UI animations.
-- [ ] Optimize responsive layout for desktop and mobile viewports.
+- [x] Build pixel-art/2D sprite stage with status indicators and speech bubble components.
+- [x] Connect real-time SSE stream state machine to UI animations.
+- [x] Optimize responsive layout for desktop and mobile viewports.
 
 ### Phase 4: Security, Caching & Polish
 
 - [ ] Implement Redis semantic/tool caching.
-- [ ] Apply prompt injection sanitization across inter-agent communications.
+- [x] Apply prompt injection sanitization across inter-agent communications.
 - [ ] Add sound effects (8-bit text audio, battle chimes) and transcript export features.
+
+---
+
+## Running locally / on your phone via VPN
+
+```bash
+npm ci
+cp .env.example .env.local     # then set APP_PASSWORD and OPENROUTER_API_KEY
+npm run build
+npm run start:lan              # same as: next start -H 0.0.0.0
+```
+
+Then open `http://<host-vpn-ip>:3000` on your phone and log in with `APP_PASSWORD`.
+
+- Over plain http the session cookie is not marked `Secure`. Set `COOKIE_SECURE=true` only when serving over https.
+- Data (SQLite) is stored at `DATABASE_PATH` (default `./data/council.db`).
+- Quests that were still running when the server restarted are marked `interrupted` on startup.
+- See `.env.example` for all configuration options.
 
 ---
 
