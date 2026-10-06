@@ -17,6 +17,20 @@ export interface AgentState {
   modelUsed?: string;
   fallback?: { primary: string; modelUsed: string };
   costUsd: number;
+  lastThought?: string;
+  lastCitations?: Citation[];
+  lastLatencyMs?: number;
+}
+
+export interface Citation {
+  url: string;
+  title?: string;
+}
+
+/** What the inspector is showing: an agent, optionally pinned to one message. */
+export interface InspectSelection {
+  agentId: string;
+  entryId?: number;
 }
 
 export type TranscriptKind = "message" | "status" | "final" | "error" | "director";
@@ -41,6 +55,11 @@ export interface TranscriptEntry {
   kind: TranscriptKind;
   text: string;
   tokensUsed: number;
+  thought?: string;
+  citations?: Citation[];
+  model?: string;
+  costUsd?: number;
+  latencyMs?: number;
 }
 
 export type QuestPhase = "idle" | "running" | "done" | "error";
@@ -106,6 +125,16 @@ const num = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? v : undefined;
 const rec = (v: unknown): Record<string, unknown> | undefined =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+
+function parseCitations(v: unknown): Citation[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.flatMap((c): Citation[] => {
+    const r = rec(c);
+    const url = str(r?.url);
+    return url ? [{ url, title: str(r?.title) }] : [];
+  });
+  return out.length ? out : undefined;
+}
 
 function patchAgent(
   agents: AgentState[],
@@ -227,6 +256,9 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
       }
       const budget = rec(d.budget);
       const ratio = num(budget?.remainingRatio);
+      const thought = str(d.thought)?.trim() || undefined;
+      const citations = parseCitations(d.citations);
+      const latencyMs = num(d.latencyMs);
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({
         ...a,
         status: "SPEAKING",
@@ -235,8 +267,21 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
         remainingRatio: ratio === undefined ? a.remainingRatio : Math.max(0, Math.min(1, ratio)),
         modelUsed: str(d.model) ?? a.modelUsed,
         costUsd: a.costUsd + (num(d.costUsd) ?? 0),
+        lastThought: thought ?? a.lastThought,
+        lastCitations: citations ?? a.lastCitations,
+        lastLatencyMs: latencyMs ?? a.lastLatencyMs,
       }));
-      next.transcript = [...state.transcript, entry("message", message)];
+      next.transcript = [
+        ...state.transcript,
+        {
+          ...entry("message", message),
+          thought,
+          citations,
+          model: str(d.model),
+          costUsd: num(d.costUsd),
+          latencyMs,
+        },
+      ];
       return next;
     }
     case "DONE": {

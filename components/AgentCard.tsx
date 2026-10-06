@@ -1,5 +1,6 @@
 import { AVATAR_GLYPH } from "./mock-data";
-import type { AgentState, AgentStatus } from "@/lib/client/questReducer";
+import { statusLabel } from "./arena/statusLabels";
+import type { AgentState, AgentStatus, InspectSelection } from "@/lib/client/questReducer";
 
 const STATUS_STYLE: Record<AgentStatus, string> = {
   IDLE: "bg-zinc-600 text-white",
@@ -37,15 +38,23 @@ export function HpBar({ ratio: raw }: { ratio: number }) {
 export function StatusBadge({ status }: { status: AgentStatus }) {
   return (
     <span
-      className={`inline-block px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_STYLE[status]}`}
+      className={`inline-block px-1.5 py-0.5 text-[10px] font-bold tracking-wider ${STATUS_STYLE[status]}`}
     >
-      {status}
+      {statusLabel(status)}
     </span>
   );
 }
 
 /** Full card at sm+, compact status row on narrow screens (README §10 rule 4). */
-export function AgentCard({ agent: raw, paused = false }: { agent: AgentState; paused?: boolean }) {
+export function AgentCard({
+  agent: raw,
+  paused = false,
+  onInspect,
+}: {
+  agent: AgentState;
+  paused?: boolean;
+  onInspect?: (sel: InspectSelection) => void;
+}) {
   const agent: AgentState =
     paused && raw.status !== "DONE" && raw.status !== "ERROR" ? { ...raw, status: "PAUSED" } : raw;
   const glyph = AVATAR_GLYPH[agent.avatar] ?? "❓";
@@ -55,7 +64,24 @@ export function AgentCard({ agent: raw, paused = false }: { agent: AgentState; p
       className="border-4 border-amber-200/80 bg-indigo-950/80 shadow-[4px_4px_0_0_#000]"
     >
       {/* compact row */}
-      <div className="flex min-h-11 items-center gap-2 px-2 py-1 sm:hidden" data-testid="agent-row">
+      <div
+        className="flex min-h-11 items-center gap-2 px-2 py-1 sm:hidden"
+        data-testid="agent-row"
+        {...(onInspect
+          ? {
+              role: "button",
+              tabIndex: 0,
+              "aria-label": `Inspect ${agent.role}`,
+              onClick: () => onInspect({ agentId: agent.id }),
+              onKeyDown: (ev: React.KeyboardEvent) => {
+                if (ev.key === "Enter" || ev.key === " ") {
+                  ev.preventDefault();
+                  onInspect({ agentId: agent.id });
+                }
+              },
+            }
+          : {})}
+      >
         <span aria-hidden className="text-xl">
           {glyph}
         </span>
@@ -69,6 +95,16 @@ export function AgentCard({ agent: raw, paused = false }: { agent: AgentState; p
       </div>
       {/* full card */}
       <div className="hidden space-y-2 p-3 sm:block">
+        {onInspect && (
+          <button
+            type="button"
+            data-testid="agent-inspect"
+            onClick={() => onInspect({ agentId: agent.id })}
+            className="float-right min-h-8 px-2 text-[10px] uppercase text-amber-300 underline"
+          >
+            Inspect
+          </button>
+        )}
         <div className="flex items-center gap-3">
           <span
             aria-hidden
