@@ -36,7 +36,10 @@ export function AppShell() {
           aria-label="Discussion Stream"
           className={`min-h-0 flex-1 ${tab === "stream" ? "block" : "hidden"} lg:block`}
         >
-          <TranscriptPanel entries={state.transcript} />
+          <TranscriptPanel
+            entries={state.transcript}
+            finalAnswer={state.phase === "done" ? state.finalAnswer : null}
+          />
         </section>
       </main>
       <ActionBar
