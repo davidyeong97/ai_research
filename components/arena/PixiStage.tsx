@@ -146,10 +146,9 @@ export default function PixiStage({ agents }: { agents: AgentState[] }) {
         v.sprite.tint = dim ? 0x888888 : 0xffffff;
         v.flash.clear();
         if (a.status === "ERROR") {
-          v.flash.rect(-px / 2, -px, px, px).fill({ color: 0xdc2626, alpha: reduced ? 0.4 : 0 });
+          v.flash.rect(-px / 2, -px, px, px).fill({ color: 0xdc2626, alpha: 0.5 });
         }
         v.body.position.set(0, 0);
-        v.flash.alpha = 1;
         if (reduced) v.body.position.set(0, 0);
       });
     }
@@ -171,7 +170,7 @@ export default function PixiStage({ agents }: { agents: AgentState[] }) {
           dy = Math.round(Math.sin(elapsed * 2.6 + phase) * 2);
         v.body.position.set(Math.round(dx), Math.round(dy));
         if (a.status === "ERROR") {
-          v.flash.alpha = 0.5 + 0.5 * Math.sin(elapsed * 10);
+          v.flash.alpha = 0.6 + 0.4 * Math.sin(elapsed * 10);
         }
       });
     }
