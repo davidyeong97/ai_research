@@ -88,14 +88,20 @@ export class BudgetTracker {
       throw new RangeError("Usage token counts must be non-negative finite numbers");
     }
     const total = promptTokens + completionTokens;
-    const e = this.ledger.get(agentId) ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0, calls: 0 };
+    const e = this.ledger.get(agentId) ?? {
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      calls: 0,
+    };
     e.promptTokens += promptTokens;
     e.completionTokens += completionTokens;
     e.totalTokens += total;
     e.calls += 1;
     this.ledger.set(agentId, e);
     this._used += total;
-    if (this._used > this.cap) throw new BudgetExceeded(this.cap, this._used - total, total, agentId);
+    if (this._used > this.cap)
+      throw new BudgetExceeded(this.cap, this._used - total, total, agentId);
   }
 
   agentUsage(agentId: string): AgentLedgerEntry {

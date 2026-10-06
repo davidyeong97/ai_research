@@ -5,7 +5,11 @@ const base = { messages: [{ role: "user" as const, content: "hi" }], maxTokens: 
 
 describe("MockLLMClient", () => {
   it("streams text, reasoning and usage", async () => {
-    const c = new MockLLMClient({ text: "hello big world", reasoning: "hmm", usage: { costUsd: 0.01 } });
+    const c = new MockLLMClient({
+      text: "hello big world",
+      reasoning: "hmm",
+      usage: { costUsd: 0.01 },
+    });
     const r = await collectChat(c.streamChat({ ...base, models: ["a/x", "b/y"] }));
     expect(r.text).toBe("hello big world");
     expect(r.reasoning).toBe("hmm");

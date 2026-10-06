@@ -59,8 +59,7 @@ export class OpenRouterClient implements LLMClient {
     ]);
     const modelUsed = response.modelId || primary;
     const or = providerMetadata?.openrouter as
-      | { usage?: { promptTokens?: number; completionTokens?: number; cost?: number } }
-      | undefined;
+      { usage?: { promptTokens?: number; completionTokens?: number; cost?: number } } | undefined;
 
     if (modelUsed !== primary) {
       yield { type: "fallback", primary, modelUsed };

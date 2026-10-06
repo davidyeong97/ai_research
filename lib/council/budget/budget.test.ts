@@ -17,7 +17,12 @@ describe("BudgetTracker", () => {
     expect(b.used).toBe(5000);
     expect(b.remaining).toBe(5000);
     expect(b.remainingRatio).toBe(0.5);
-    expect(b.agentUsage("wizard")).toEqual({ promptTokens: 1500, completionTokens: 1500, totalTokens: 3000, calls: 2 });
+    expect(b.agentUsage("wizard")).toEqual({
+      promptTokens: 1500,
+      completionTokens: 1500,
+      totalTokens: 3000,
+      calls: 2,
+    });
     expect(b.agentUsage("nobody").totalTokens).toBe(0);
     expect(b.snapshot().agents.rogue.totalTokens).toBe(2000);
   });
@@ -55,6 +60,8 @@ describe("BudgetTracker", () => {
 
   it("validates input", () => {
     expect(() => new BudgetTracker(0)).toThrow(RangeError);
-    expect(() => new BudgetTracker(10).record({ promptTokens: -1, completionTokens: 0 })).toThrow(RangeError);
+    expect(() => new BudgetTracker(10).record({ promptTokens: -1, completionTokens: 0 })).toThrow(
+      RangeError,
+    );
   });
 });

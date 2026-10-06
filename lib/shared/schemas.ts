@@ -6,6 +6,8 @@ export const AgentAssignmentSchema = z.object({
   id: z.string().min(1),
   role: z.string().min(1),
   avatar: z.string().min(1),
+  /** Primary OpenRouter model ID; `fallbackModels` are tried after it. */
+  model: z.string().min(1).optional(),
   fallbackModels: z.array(z.string().min(1)).default([]),
 });
 

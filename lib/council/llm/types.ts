@@ -6,8 +6,7 @@ export interface ChatMessage {
 }
 
 export type ReasoningOption =
-  | { effort: "xhigh" | "high" | "medium" | "low" | "minimal" | "none" }
-  | { maxTokens: number };
+  { effort: "xhigh" | "high" | "medium" | "low" | "minimal" | "none" } | { maxTokens: number };
 
 export interface StreamChatParams {
   messages: ChatMessage[];
