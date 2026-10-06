@@ -76,6 +76,8 @@ export interface QuestState {
   transcript: TranscriptEntry[];
   finalAnswer: string | null;
   lastEventId: number;
+  /** Highest round seen across events (0 before any). */
+  currentRound: number;
   totalTokens: number;
   totalCostUsd: number;
   error: string | null;
@@ -96,6 +98,7 @@ export const initialQuestState: QuestState = {
   transcript: [],
   finalAnswer: null,
   lastEventId: 0,
+  currentRound: 0,
   totalTokens: 0,
   totalCostUsd: 0,
   error: null,
@@ -170,7 +173,11 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
   // Reconnect replays may resend events we already have.
   if (e.id <= state.lastEventId) return state;
 
-  const next: QuestState = { ...state, lastEventId: e.id };
+  const next: QuestState = {
+    ...state,
+    lastEventId: e.id,
+    currentRound: Math.max(state.currentRound, e.round),
+  };
   const d = e.data;
   // Any activity after an approval gate means the plan was approved.
   if (state.pendingApproval && e.action !== "PAUSED") next.pendingApproval = null;

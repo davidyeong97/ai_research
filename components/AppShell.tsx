@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { StatsBar } from "./StatsBar";
 import { ActionBar } from "./ActionBar";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { ArenaPanel } from "./ArenaPanel";
@@ -19,11 +20,29 @@ export function AppShell() {
   const [selected, setSelected] = useState<InspectSelection | null>(null);
   const [tab, setTab] = useState<Tab>("arena");
   const { state, starting, connectionError, start, control, approve } = useQuestStream();
+  const [unread, setUnread] = useState(false);
+  const [prev, setPrev] = useState({ count: 0, verdict: false });
+  const count = state.transcript.length;
+  const verdict = state.phase === "done" && !!state.finalAnswer;
+  if (prev.count !== count || prev.verdict !== verdict) {
+    setPrev({ count, verdict });
+    if (verdict && !prev.verdict) {
+      setTab("stream");
+      setUnread(false);
+    } else if (count > prev.count && prev.count > 0 && tab === "arena") {
+      setUnread(true);
+    }
+  }
+  const selectTab = (t: Tab) => {
+    setTab(t);
+    if (t === "stream") setUnread(false);
+  };
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-indigo-950 pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] font-mono text-indigo-50">
       <header className="flex-none border-b-4 border-amber-200/80 px-3 py-2 text-center text-lg font-bold tracking-widest text-amber-300">
         ⚔ COUNCIL ⚔
       </header>
+      <StatsBar state={state} />
       <main className="flex min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:divide-x-4 lg:divide-amber-200/80">
         <section
           id="panel-arena"
@@ -80,13 +99,20 @@ export function AppShell() {
             type="button"
             aria-selected={tab === t.id}
             aria-controls={`panel-${t.id}`}
-            onClick={() => setTab(t.id)}
-            className={`flex min-h-12 flex-1 flex-col items-center justify-center text-[11px] font-bold uppercase ${
+            onClick={() => selectTab(t.id)}
+            className={`flex relative min-h-12 flex-1 flex-col items-center justify-center text-[11px] font-bold uppercase ${
               tab === t.id ? "bg-amber-300 text-black" : "text-indigo-200"
             }`}
           >
             <span aria-hidden>{t.icon}</span>
             {t.label}
+            {t.id === "stream" && unread && tab !== "stream" && (
+              <span
+                data-testid="unread-dot"
+                aria-label="New messages"
+                className="absolute right-[18%] top-1.5 h-2.5 w-2.5 rounded-full bg-red-500"
+              />
+            )}
           </button>
         ))}
       </nav>
