@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema, type DB } from "../db";
 import type { OrchestrationPlan } from "../shared";
+import { BudgetExceeded, BudgetTracker } from "./budget";
 import { getBus, type EventBus } from "./bus";
 import { collectChat, OpenRouterClient, type LLMClient } from "./llm";
 import { LeadOrchestrator } from "./orchestrator";
@@ -54,7 +55,7 @@ export async function createQuest(
 }
 
 /** Minimal run loop: THINKING -> SPEAKING per agent, then DONE. (Debate comes in Phase 2.) */
-async function runPlaceholder(
+export async function runPlaceholder(
   d: Required<QuestDeps>,
   questId: string,
   query: string,
@@ -66,38 +67,72 @@ async function runPlaceholder(
     tokens = 0,
     data = {},
   ) => d.bus.publish({ questId, round: 1, agentId, action, tokensUsed: tokens, data });
-  let total = 0;
+  const budget = new BudgetTracker(plan.budgetCapTokens);
+  const MAX_TOKENS = 300;
   try {
     // Yield so the caller can subscribe before events fire.
     await new Promise((r) => setTimeout(r, 0));
     for (const agent of plan.executionPlan.assignedAgents) {
       emit(agent.id, "THINKING");
       const models = [agent.model, ...agent.fallbackModels].filter((m): m is string => !!m);
+      const messages = [
+        {
+          role: "system" as const,
+          content: `You are the ${agent.role} of a council. Answer briefly.`,
+        },
+        { role: "user" as const, content: query },
+      ];
+      const promptEstimate = Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4);
+      budget.assertCanSpend(MAX_TOKENS + promptEstimate, agent.id);
       const { text, usage } = await collectChat(
-        d.llm.streamChat({
-          messages: [
-            { role: "system", content: `You are the ${agent.role} of a council. Answer briefly.` },
-            { role: "user", content: query },
-          ],
-          models,
-          maxTokens: 300,
-        }),
+        d.llm.streamChat({ messages, models, maxTokens: MAX_TOKENS }),
       );
       const tokens = (usage?.promptTokens ?? 0) + (usage?.completionTokens ?? 0);
-      total += tokens;
-      emit(agent.id, "SPEAKING", tokens, { message: text });
+      try {
+        budget.record(
+          {
+            promptTokens: usage?.promptTokens ?? 0,
+            completionTokens: usage?.completionTokens ?? 0,
+          },
+          agent.id,
+        );
+      } finally {
+        // Surface what was spent even if recording breached the cap.
+        emit(agent.id, "SPEAKING", tokens, {
+          message: text,
+          budget: {
+            cap: budget.cap,
+            used: budget.used,
+            remaining: budget.remaining,
+            remainingRatio: budget.remainingRatio,
+          },
+        });
+      }
     }
-    emit("lead", "DONE", 0, { totalTokens: total });
+    emit("lead", "DONE", 0, { totalTokens: budget.used });
     d.db
       .update(schema.sessions)
-      .set({ status: "done", totalTokens: total })
+      .set({ status: "done", totalTokens: budget.used })
       .where(eq(schema.sessions.id, questId))
       .run();
   } catch (e) {
-    emit("lead", "ERROR", 0, { message: e instanceof Error ? e.message : String(e) });
+    const exceeded = e instanceof BudgetExceeded;
+    emit(
+      "lead",
+      "ERROR",
+      0,
+      exceeded
+        ? {
+            reason: "budget_exceeded",
+            cap: e.cap,
+            used: budget.used,
+            message: e.message,
+          }
+        : { message: e instanceof Error ? e.message : String(e) },
+    );
     d.db
       .update(schema.sessions)
-      .set({ status: "error" })
+      .set({ status: exceeded ? "budget_exceeded" : "error", totalTokens: budget.used })
       .where(eq(schema.sessions.id, questId))
       .run();
   }
