@@ -1,3 +1,8 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import { Markdown } from "./Markdown";
+import { FinalAnswer } from "./FinalAnswer";
 import type { TranscriptEntry } from "@/lib/client/questReducer";
 
 const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
@@ -8,15 +13,28 @@ const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
   error: "border-red-500 bg-red-950/60 text-red-100",
 };
 
-export function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
+export function TranscriptPanel({
+  entries,
+  finalAnswer,
+}: {
+  entries: TranscriptEntry[];
+  finalAnswer?: string | null;
+}) {
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    endRef.current?.scrollIntoView?.({ block: "end" });
+  }, [entries.length, finalAnswer]);
+  const visible = finalAnswer ? entries.filter((e) => e.kind !== "final") : entries;
   return (
     <div className="h-full overflow-y-auto overscroll-contain p-3" data-testid="transcript-scroll">
       <h2 className="mb-3 text-sm font-bold uppercase tracking-widest text-amber-300">
         Discussion Stream
       </h2>
-      {entries.length === 0 && <p className="text-sm text-indigo-300">Nothing said yet.</p>}
+      {visible.length === 0 && !finalAnswer && (
+        <p className="text-sm text-indigo-300">Nothing said yet.</p>
+      )}
       <ol className="space-y-2">
-        {entries.map((e) => (
+        {visible.map((e) => (
           <li
             key={e.id}
             data-testid={
@@ -38,10 +56,16 @@ export function TranscriptPanel({ entries }: { entries: TranscriptEntry[] }) {
               </span>
               <span>{e.action}</span>
             </div>
-            <p className="whitespace-pre-wrap break-words">{e.text}</p>
+            {e.kind === "status" || e.kind === "error" ? (
+              <p className="whitespace-pre-wrap break-words">{e.text}</p>
+            ) : (
+              <Markdown>{e.text}</Markdown>
+            )}
           </li>
         ))}
       </ol>
+      {finalAnswer ? <FinalAnswer text={finalAnswer} /> : null}
+      <div ref={endRef} />
     </div>
   );
 }
