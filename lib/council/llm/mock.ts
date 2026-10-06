@@ -48,8 +48,7 @@ export class MockLLMClient implements LLMClient {
       type: "usage",
       usage: {
         promptTokens:
-          res.usage?.promptTokens ??
-          approx(params.messages.map((m) => m.content).join("")),
+          res.usage?.promptTokens ?? approx(params.messages.map((m) => m.content).join("")),
         completionTokens: res.usage?.completionTokens ?? approx(text),
         costUsd: res.usage?.costUsd ?? 0,
         modelUsed,
