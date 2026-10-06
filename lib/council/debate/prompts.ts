@@ -1,4 +1,5 @@
 import type { ChatMessage } from "../llm";
+import { UNTRUSTED_DATA_NOTICE, wrapPeerMessage, wrapPeerSummary } from "./sanitize";
 
 export interface DebateAgent {
   id: string;
@@ -42,7 +43,7 @@ export type PromptBuilder = (ctx: PromptContext) => ChatMessage[];
 /** Hook: builds the lead's final synthesis prompt. */
 export type SynthesisPromptBuilder = (ctx: SynthesisContext) => ChatMessage[];
 
-const fmt = (e: HistoryEntry) => `[${e.role} (${e.agentId}), round ${e.round}]\n${e.text}`;
+const fmt = (e: HistoryEntry) => wrapPeerMessage(e.agentId, e.text, { role: e.role, round: e.round });
 
 /** Peers' most recent message (one per peer) before `round`. */
 export function latestPeerMessages(ctx: PromptContext): HistoryEntry[] {
@@ -62,7 +63,7 @@ export const buildAgentPrompt: PromptBuilder = (ctx) => {
   const { agent, round, maxRounds, query } = ctx;
   const system =
     `You are the ${agent.role} of a council of AI experts debating a user's question. ` +
-    `This is round ${round} of ${maxRounds}. Stay in your role and be concise.`;
+    `This is round ${round} of ${maxRounds}. Stay in your role and be concise. ${UNTRUSTED_DATA_NOTICE}`;
   if (round === 1) {
     return [
       {
@@ -76,8 +77,8 @@ export const buildAgentPrompt: PromptBuilder = (ctx) => {
   const own = lastOwnMessage(ctx);
   const parts = [
     `Question:\n${query}`,
-    ctx.summary ? `Summary of the debate so far (rounds 1-${round - 1}):\n${ctx.summary}` : "",
-    own ? `Your previous position:\n${own.text}` : "",
+    ctx.summary ? `Summary of the debate so far (rounds 1-${round - 1}):\n${wrapPeerSummary(ctx.summary)}` : "",
+    own ? `Your previous position:\n${wrapPeerMessage(own.agentId, own.text, { role: own.role, round: own.round })}` : "",
     `Other members' positions from round ${round - 1}:\n${peers.map(fmt).join("\n\n") || "(none)"}`,
     "Critique and rebut weak points in their positions, acknowledge strong ones, and refine your own proposal.",
   ].filter(Boolean);
@@ -98,7 +99,8 @@ export const buildSynthesisPrompt: SynthesisPromptBuilder = (ctx) => {
       role: "system",
       content:
         "You are the lead of a council of AI experts. After the debate, synthesize the council's " +
-        "positions into one clear, final answer for the user. Resolve disagreements and note caveats.",
+        "positions into one clear, final answer for the user. Resolve disagreements and note caveats. " +
+        UNTRUSTED_DATA_NOTICE,
     },
     {
       role: "user",
@@ -125,13 +127,14 @@ export function buildSummaryPrompt(ctx: SummaryContext): ChatMessage[] {
       content:
         "You are the lead of a council of AI experts. Summarize the debate so far in at most " +
         "400 tokens: each member's key positions, points of agreement, and open disagreements. " +
-        "Be faithful and neutral; do not add new arguments.",
+        "Be faithful and neutral; do not add new arguments. " +
+        UNTRUSTED_DATA_NOTICE,
     },
     {
       role: "user",
       content: [
         `Question:\n${ctx.query}`,
-        ctx.previousSummary ? `Summary of earlier rounds:\n${ctx.previousSummary}` : "",
+        ctx.previousSummary ? `Summary of earlier rounds:\n${wrapPeerSummary(ctx.previousSummary)}` : "",
         `Transcript (through round ${ctx.upToRound}):\n${transcript || "(none)"}`,
         "Write the compact summary.",
       ]

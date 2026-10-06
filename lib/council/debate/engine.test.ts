@@ -83,7 +83,7 @@ describe("runDebate", () => {
     expect(llm.calls[0].messages[1].content).toBe("Q?");
     const r2wizard = llm.calls[2].messages[1].content;
     expect(r2wizard).toContain("msg2");
-    expect(r2wizard).toContain("Your previous position:\nmsg1");
+    expect(r2wizard).toMatch(/Your previous position:\n<peer_message[^>]*>\nmsg1\n<\/peer_message>/);
     // Call 4 is the lead's summary; round 3 scout sees wizard round-2 message (msg3), not round-1's (msg1).
     const r3scout = llm.calls[6].messages[1].content;
     expect(r3scout).toContain("msg3");
@@ -110,11 +110,11 @@ describe("runDebate", () => {
     expect(summaryCalls).toHaveLength(2); // before rounds 3 and 4
     expect(summaryCalls[0].models).toEqual(LEAD_MODELS);
     // Round-3 summary input contains rounds 1-2 transcript.
-    expect(summaryCalls[0].messages[1].content).toContain("round 1");
+    expect(summaryCalls[0].messages[1].content).toContain('round="1"');
     // Round-4 summary builds on previous summary + only round 3.
     expect(summaryCalls[1].messages[1].content).toContain("SUMMARY-TEXT");
-    expect(summaryCalls[1].messages[1].content).not.toContain("round 1");
-    expect(summaryCalls[1].messages[1].content).not.toContain("round 2,");
+    expect(summaryCalls[1].messages[1].content).not.toContain('round="1"');
+    expect(summaryCalls[1].messages[1].content).not.toContain('round="2"');
 
     const idx = llm.calls.indexOf(summaryCalls[0]);
     const round1Text = `R2-1-UNIQUE`; // wizard round-1 output (first call)
