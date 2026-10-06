@@ -13,6 +13,10 @@ export interface UseQuestStream {
   /** Connection or request error (distinct from a quest ERROR event). */
   connectionError: string | null;
   start: (query: string) => Promise<void>;
+  /** Pause/resume/inject guidance. Resolves true on success. */
+  control: (action: "pause" | "resume" | "inject", text?: string) => Promise<boolean>;
+  /** Answer the plan-approval gate. */
+  approve: (approved: boolean) => Promise<boolean>;
 }
 
 export function useQuestStream(): UseQuestStream {
@@ -104,7 +108,38 @@ export function useQuestStream(): UseQuestStream {
     [close, connect],
   );
 
+  const questId = state.questId;
+  const post = useCallback(
+    async (path: string, payload: unknown): Promise<boolean> => {
+      if (!questId) return false;
+      try {
+        const res = await fetch(`/api/quests/${encodeURIComponent(questId)}/${path}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const body: unknown = await res.json().catch(() => null);
+          const err = (body as { error?: unknown } | null)?.error;
+          throw new Error(typeof err === "string" ? err : `Request failed (${res.status})`);
+        }
+        setConnectionError(null);
+        return true;
+      } catch (e) {
+        setConnectionError(e instanceof Error ? e.message : "Request failed");
+        return false;
+      }
+    },
+    [questId],
+  );
+  const control = useCallback(
+    (action: "pause" | "resume" | "inject", text?: string) =>
+      post("control", action === "inject" ? { action, text } : { action }),
+    [post],
+  );
+  const approve = useCallback((approved: boolean) => post("approve", { approved }), [post]);
+
   useEffect(() => close, [close]);
 
-  return { state, starting, connectionError, start };
+  return { state, starting, connectionError, start, control, approve };
 }

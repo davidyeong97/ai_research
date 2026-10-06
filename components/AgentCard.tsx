@@ -45,7 +45,9 @@ export function StatusBadge({ status }: { status: AgentStatus }) {
 }
 
 /** Full card at sm+, compact status row on narrow screens (README §10 rule 4). */
-export function AgentCard({ agent }: { agent: AgentState }) {
+export function AgentCard({ agent: raw, paused = false }: { agent: AgentState; paused?: boolean }) {
+  const agent: AgentState =
+    paused && raw.status !== "DONE" && raw.status !== "ERROR" ? { ...raw, status: "PAUSED" } : raw;
   const glyph = AVATAR_GLYPH[agent.avatar] ?? "❓";
   return (
     <li
