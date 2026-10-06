@@ -81,3 +81,22 @@ describe("quest cost persistence", () => {
     expect(events.at(-1)?.data.totalCostUsd).toBeCloseTo(0.01 * n);
   });
 });
+
+describe("quest cost cap", () => {
+  it("stops with cost_cap_exceeded when spend reaches the cap", async () => {
+    const db = createDb(":memory:");
+    const bus = new EventBus(db);
+    const llm = new MockLLMClient({ text: "hi", usage: { costUsd: 0.3 } }).enqueue(classify);
+    const { questId, done } = await createQuest("q", { db, bus, llm });
+    await done;
+    const events: Array<{ action: string; data: Record<string, unknown> }> = [];
+    bus.subscribe(questId, 0, (e) => events.push(e as never));
+    const last = events.at(-1)!;
+    expect(last.action).toBe("ERROR");
+    expect(last.data).toMatchObject({ reason: "cost_cap_exceeded", costCapUsd: 0.5 });
+    expect(events.filter((e) => e.action === "SPEAKING")).toHaveLength(2);
+    const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, questId)).get();
+    expect(session?.status).toBe("cost_cap_exceeded");
+    expect(session?.totalCostUsd).toBeCloseTo(0.6);
+  });
+});

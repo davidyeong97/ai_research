@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { BudgetExceeded, BudgetTracker, defaultBudgetCap } from "./index";
+import {
+  BudgetExceeded,
+  BudgetTracker,
+  CostCapExceeded,
+  costCapFromEnv,
+  defaultBudgetCap,
+} from "./index";
 
 describe("defaultBudgetCap", () => {
   it("follows README 4.1", () => {
@@ -63,5 +69,31 @@ describe("BudgetTracker", () => {
     expect(() => new BudgetTracker(10).record({ promptTokens: -1, completionTokens: 0 })).toThrow(
       RangeError,
     );
+  });
+});
+
+describe("cost cap", () => {
+  it("accumulates cost and throws once the cap is reached", () => {
+    const b = new BudgetTracker(1000, 0.5);
+    b.recordCost(0.2, "a");
+    expect(b.costExhausted).toBe(false);
+    expect(() => b.recordCost(0.3, "a")).toThrow(CostCapExceeded);
+    expect(b.costUsd).toBeCloseTo(0.5);
+    expect(b.costExhausted).toBe(true);
+  });
+
+  it("never throws without a cap and validates input", () => {
+    const b = new BudgetTracker(1000);
+    b.recordCost(100);
+    expect(b.costExhausted).toBe(false);
+    expect(() => b.recordCost(-1)).toThrow(RangeError);
+    expect(() => new BudgetTracker(10, 0)).toThrow(RangeError);
+  });
+
+  it("reads env with default 0.50", () => {
+    expect(costCapFromEnv({})).toBe(0.5);
+    expect(costCapFromEnv({ MAX_COST_USD_PER_QUEST: "1.25" })).toBe(1.25);
+    expect(costCapFromEnv({ MAX_COST_USD_PER_QUEST: "abc" })).toBe(0.5);
+    expect(costCapFromEnv({ MAX_COST_USD_PER_QUEST: "" })).toBe(0.5);
   });
 });

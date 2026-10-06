@@ -28,6 +28,26 @@ export class BudgetExceeded extends Error {
   }
 }
 
+export class CostCapExceeded extends Error {
+  readonly name = "CostCapExceeded";
+  constructor(
+    readonly costCapUsd: number,
+    readonly spentUsd: number,
+    readonly agentId?: string,
+  ) {
+    super(
+      `Cost cap exceeded: spent $${spentUsd.toFixed(4)} >= cap $${costCapUsd.toFixed(4)}` +
+        (agentId ? ` (agent ${agentId})` : ""),
+    );
+  }
+}
+
+/** Reads MAX_COST_USD_PER_QUEST (default 0.50); invalid values fall back to the default. */
+export function costCapFromEnv(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.MAX_COST_USD_PER_QUEST);
+  return env.MAX_COST_USD_PER_QUEST?.trim() && Number.isFinite(n) && n > 0 ? n : 0.5;
+}
+
 export interface AgentLedgerEntry {
   promptTokens: number;
   completionTokens: number;
@@ -37,12 +57,17 @@ export interface AgentLedgerEntry {
 
 export class BudgetTracker {
   readonly cap: number;
+  readonly costCapUsd?: number;
   private _used = 0;
+  private _costUsd = 0;
   private readonly ledger = new Map<string, AgentLedgerEntry>();
 
-  constructor(cap: number) {
+  constructor(cap: number, costCapUsd?: number) {
     if (!Number.isFinite(cap) || cap <= 0) throw new RangeError(`Invalid cap: ${cap}`);
+    if (costCapUsd !== undefined && (!Number.isFinite(costCapUsd) || costCapUsd <= 0))
+      throw new RangeError(`Invalid costCapUsd: ${costCapUsd}`);
     this.cap = cap;
+    this.costCapUsd = costCapUsd;
   }
 
   static forComplexity(complexity: number): BudgetTracker {
@@ -51,6 +76,22 @@ export class BudgetTracker {
 
   get used(): number {
     return this._used;
+  }
+
+  get costUsd(): number {
+    return this._costUsd;
+  }
+
+  get costExhausted(): boolean {
+    return this.costCapUsd !== undefined && this._costUsd >= this.costCapUsd;
+  }
+
+  /** Accounts spent dollars; throws CostCapExceeded once spend reaches the cap. */
+  recordCost(costUsd: number, agentId = "lead"): void {
+    if (!Number.isFinite(costUsd) || costUsd < 0)
+      throw new RangeError("Cost must be a non-negative finite number");
+    this._costUsd += costUsd;
+    if (this.costExhausted) throw new CostCapExceeded(this.costCapUsd!, this._costUsd, agentId);
   }
 
   get remaining(): number {
@@ -115,6 +156,8 @@ export class BudgetTracker {
       used: this._used,
       remaining: this.remaining,
       remainingRatio: this.remainingRatio,
+      costUsd: this._costUsd,
+      costCapUsd: this.costCapUsd,
       agents: Object.fromEntries([...this.ledger].map(([k, v]) => [k, { ...v }])),
     };
   }
