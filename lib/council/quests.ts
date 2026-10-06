@@ -69,6 +69,7 @@ export async function runPlaceholder(
   ) => d.bus.publish({ questId, round: 1, agentId, action, tokensUsed: tokens, data });
   const budget = new BudgetTracker(plan.budgetCapTokens);
   const MAX_TOKENS = 300;
+  let totalCostUsd = 0;
   try {
     // Yield so the caller can subscribe before events fire.
     await new Promise((r) => setTimeout(r, 0));
@@ -84,10 +85,32 @@ export async function runPlaceholder(
       ];
       const promptEstimate = Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4);
       budget.assertCanSpend(MAX_TOKENS + promptEstimate, agent.id);
-      const { text, usage } = await collectChat(
+      const startedAt = Date.now();
+      const { text, reasoning, usage } = await collectChat(
         d.llm.streamChat({ messages, models, maxTokens: MAX_TOKENS }),
       );
+      const latencyMs = Date.now() - startedAt;
       const tokens = (usage?.promptTokens ?? 0) + (usage?.completionTokens ?? 0);
+      const costUsd = usage?.costUsd ?? 0;
+      totalCostUsd += costUsd;
+      d.db
+        .insert(schema.agentMessages)
+        .values({
+          sessionId: questId,
+          round: 1,
+          agentId: agent.id,
+          actionType: "SPEAKING",
+          thoughtLog: reasoning || null,
+          visibleMessage: text,
+          tokenCount: tokens,
+          latencyMs,
+        })
+        .run();
+      d.db
+        .update(schema.sessions)
+        .set({ totalCostUsd })
+        .where(eq(schema.sessions.id, questId))
+        .run();
       try {
         budget.record(
           {
@@ -100,6 +123,7 @@ export async function runPlaceholder(
         // Surface what was spent even if recording breached the cap.
         emit(agent.id, "SPEAKING", tokens, {
           message: text,
+          costUsd,
           budget: {
             cap: budget.cap,
             used: budget.used,
@@ -109,10 +133,13 @@ export async function runPlaceholder(
         });
       }
     }
-    emit("lead", "DONE", 0, { totalTokens: budget.used });
+    emit("lead", "DONE", 0, {
+      totalTokens: budget.used,
+      totalCostUsd,
+    });
     d.db
       .update(schema.sessions)
-      .set({ status: "done", totalTokens: budget.used })
+      .set({ status: "done", totalTokens: budget.used, totalCostUsd })
       .where(eq(schema.sessions.id, questId))
       .run();
   } catch (e) {
@@ -132,7 +159,11 @@ export async function runPlaceholder(
     );
     d.db
       .update(schema.sessions)
-      .set({ status: exceeded ? "budget_exceeded" : "error", totalTokens: budget.used })
+      .set({
+        status: exceeded ? "budget_exceeded" : "error",
+        totalTokens: budget.used,
+        totalCostUsd,
+      })
       .where(eq(schema.sessions.id, questId))
       .run();
   }

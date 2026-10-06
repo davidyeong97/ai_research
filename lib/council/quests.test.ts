@@ -43,3 +43,41 @@ describe("quest budget enforcement", () => {
     expect(session?.status).toBe("budget_exceeded");
   });
 });
+
+describe("quest cost persistence", () => {
+  it("persists per-call cost and agent_messages rows", async () => {
+    const db = createDb(":memory:");
+    const bus = new EventBus(db);
+    const llm = new MockLLMClient({
+      text: "hi there",
+      reasoning: "thinking",
+      usage: { costUsd: 0.01 },
+    }).enqueue(classify);
+    const { questId, plan, done } = await createQuest("q", { db, bus, llm });
+    await done;
+    const events: Array<{ action: string; data: Record<string, unknown> }> = [];
+    bus.subscribe(questId, 0, (e) => events.push(e as never));
+    const n = plan.executionPlan.assignedAgents.length;
+
+    const rows = db
+      .select()
+      .from(schema.agentMessages)
+      .where(eq(schema.agentMessages.sessionId, questId))
+      .all();
+    expect(rows).toHaveLength(n);
+    expect(rows[0]).toMatchObject({
+      round: 1,
+      actionType: "SPEAKING",
+      thoughtLog: "thinking",
+      visibleMessage: "hi there",
+    });
+    expect(rows[0].tokenCount).toBeGreaterThan(0);
+    expect(rows[0].latencyMs).toBeGreaterThanOrEqual(0);
+
+    const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, questId)).get();
+    expect(session?.totalCostUsd).toBeCloseTo(0.01 * n);
+    const speaking = events.filter((e) => e.action === "SPEAKING");
+    expect(speaking[0].data.costUsd).toBe(0.01);
+    expect(events.at(-1)?.data.totalCostUsd).toBeCloseTo(0.01 * n);
+  });
+});
