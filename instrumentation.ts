@@ -1,0 +1,8 @@
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  const g = globalThis as unknown as { __councilRecovered?: boolean };
+  if (g.__councilRecovered) return;
+  g.__councilRecovered = true;
+  const { recoverStrandedQuests } = await import("./lib/council/recovery");
+  recoverStrandedQuests();
+}

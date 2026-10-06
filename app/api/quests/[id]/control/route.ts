@@ -23,6 +23,12 @@ export async function POST(
   }
   const session = getDb().select().from(schema.sessions).where(eq(schema.sessions.id, id)).get();
   if (!session) return Response.json({ error: "quest not found" }, { status: 404 });
+  if (session.status === "interrupted") {
+    return Response.json(
+      { error: "quest was interrupted by a server restart", reason: "server_restarted" },
+      { status: 409 },
+    );
+  }
   const control = getControl(id);
   if (session.status !== "running" || !control) {
     return Response.json({ error: `quest is not running (${session.status})` }, { status: 409 });

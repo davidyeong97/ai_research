@@ -17,6 +17,12 @@ export async function POST(
   if (!body.success) return Response.json({ error: "approved (boolean) is required" }, { status: 400 });
   const session = getDb().select().from(schema.sessions).where(eq(schema.sessions.id, id)).get();
   if (!session) return Response.json({ error: "quest not found" }, { status: 404 });
+  if (session.status === "interrupted") {
+    return Response.json(
+      { error: "quest was interrupted by a server restart", reason: "server_restarted" },
+      { status: 409 },
+    );
+  }
   if (session.status !== "awaiting_approval" || !getControl(id)?.decide(body.data.approved)) {
     return Response.json({ error: `quest is not awaiting approval (${session.status})` }, { status: 409 });
   }
