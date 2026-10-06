@@ -2,7 +2,7 @@
 import dynamic from "next/dynamic";
 import { useSyncExternalStore } from "react";
 import { AgentCard } from "./AgentCard";
-import type { AgentState } from "@/lib/client/questReducer";
+import type { AgentState, InspectSelection } from "@/lib/client/questReducer";
 
 // Pixi touches window/WebGL, so it is only ever loaded in the browser.
 const PixiStage = dynamic(() => import("./arena/PixiStage"), {
@@ -26,7 +26,15 @@ export function useIsWide(): boolean {
   return useSyncExternalStore(subscribe, snapshot, () => false);
 }
 
-export function ArenaPanel({ agents, paused = false }: { agents: AgentState[]; paused?: boolean }) {
+export function ArenaPanel({
+  agents,
+  paused = false,
+  onInspect,
+}: {
+  agents: AgentState[];
+  paused?: boolean;
+  onInspect?: (sel: InspectSelection) => void;
+}) {
   const wide = useIsWide();
   const shown = agents.map((a) =>
     paused && a.status !== "DONE" && a.status !== "ERROR" ? { ...a, status: "PAUSED" as const } : a,
@@ -41,11 +49,11 @@ export function ArenaPanel({ agents, paused = false }: { agents: AgentState[]; p
           No quest yet. Enter one below to summon the council.
         </p>
       )}
-      {agents.length > 0 && wide && <PixiStage agents={shown} />}
+      {agents.length > 0 && wide && <PixiStage agents={shown} onInspect={onInspect} />}
       {agents.length > 0 && !wide && (
         <ul className="grid grid-cols-1 gap-3" data-testid="compact-rows">
           {agents.map((a) => (
-            <AgentCard key={a.id} agent={a} paused={paused} />
+            <AgentCard key={a.id} agent={a} paused={paused} onInspect={onInspect} />
           ))}
         </ul>
       )}

@@ -5,6 +5,8 @@ import { ActionBar } from "./ActionBar";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { ArenaPanel } from "./ArenaPanel";
 import { TranscriptPanel } from "./TranscriptPanel";
+import type { InspectSelection } from "@/lib/client/questReducer";
+import { InspectPanel } from "./InspectPanel";
 import { useQuestStream } from "@/hooks/useQuestStream";
 
 type Tab = "arena" | "stream";
@@ -14,6 +16,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 export function AppShell() {
+  const [selected, setSelected] = useState<InspectSelection | null>(null);
   const [tab, setTab] = useState<Tab>("arena");
   const { state, starting, connectionError, start, control, approve } = useQuestStream();
   return (
@@ -28,7 +31,7 @@ export function AppShell() {
           aria-label="Visual Arena"
           className={`min-h-0 flex-1 ${tab === "arena" ? "block" : "hidden"} lg:block`}
         >
-          <ArenaPanel agents={state.agents} paused={state.paused} />
+          <ArenaPanel agents={state.agents} paused={state.paused} onInspect={setSelected} />
         </section>
         <section
           id="panel-stream"
@@ -39,6 +42,7 @@ export function AppShell() {
           <TranscriptPanel
             entries={state.transcript}
             finalAnswer={state.phase === "done" ? state.finalAnswer : null}
+            onInspect={setSelected}
           />
         </section>
       </main>
@@ -50,6 +54,17 @@ export function AppShell() {
         paused={state.paused}
         onControl={control}
       />
+      {selected && (
+        <InspectPanel
+          agent={state.agents.find((a) => a.id === selected.agentId)}
+          entry={
+            selected.entryId === undefined
+              ? undefined
+              : state.transcript.find((t) => t.id === selected.entryId)
+          }
+          onClose={() => setSelected(null)}
+        />
+      )}
       {state.pendingApproval && (
         <ApprovalDialog approval={state.pendingApproval} onDecide={approve} />
       )}
