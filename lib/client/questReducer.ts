@@ -19,7 +19,18 @@ export interface AgentState {
   costUsd: number;
 }
 
-export type TranscriptKind = "message" | "status" | "final" | "error";
+export type TranscriptKind = "message" | "status" | "final" | "error" | "director";
+
+export interface PendingApproval {
+  plan: {
+    complexity?: number;
+    rounds?: number;
+    tools: string[];
+    agents: { id: string; role: string; model?: string }[];
+  };
+  estimatedMaxTokens: number | null;
+  estimatedMaxCostUsd: number | null;
+}
 
 export interface TranscriptEntry {
   /** Event id (seq). */
@@ -38,6 +49,10 @@ export interface QuestState {
   questId: string | null;
   plan: OrchestrationPlan | null;
   phase: QuestPhase;
+  /** True while the director has paused deliberation. */
+  paused: boolean;
+  /** Set while a gated quest waits for plan approval. */
+  pendingApproval: PendingApproval | null;
   agents: AgentState[];
   transcript: TranscriptEntry[];
   finalAnswer: string | null;
@@ -56,6 +71,8 @@ export const initialQuestState: QuestState = {
   questId: null,
   plan: null,
   phase: "idle",
+  paused: false,
+  pendingApproval: null,
   agents: [],
   transcript: [],
   finalAnswer: null,
@@ -126,6 +143,8 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
 
   const next: QuestState = { ...state, lastEventId: e.id };
   const d = e.data;
+  // Any activity after an approval gate means the plan was approved.
+  if (state.pendingApproval && e.action !== "PAUSED") next.pendingApproval = null;
   const entry = (kind: TranscriptKind, text: string): TranscriptEntry => ({
     id: e.id,
     round: e.round,
@@ -140,8 +159,7 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "THINKING":
     case "SEARCHING":
     case "FACT_CHECKING":
-    case "CONSENSUS":
-    case "PAUSED": {
+    case "CONSENSUS": {
       const status = str(d.statusMessage);
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({
         ...a,
@@ -149,6 +167,41 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
         latestLine: status ?? a.latestLine,
       }));
       if (status) next.transcript = [...state.transcript, entry("status", status)];
+      return next;
+    }
+    case "PAUSED": {
+      if (d.awaitingApproval === true) {
+        const p = rec(d.plan);
+        const agents = Array.isArray(p?.agents) ? p.agents : [];
+        next.pendingApproval = {
+          plan: {
+            complexity: num(p?.complexity),
+            rounds: num(p?.rounds),
+            tools: Array.isArray(p?.tools)
+              ? p.tools.filter((t): t is string => typeof t === "string")
+              : [],
+            agents: agents.flatMap((a) => {
+              const r = rec(a);
+              const id = str(r?.id);
+              return id ? [{ id, role: str(r?.role) ?? id, model: str(r?.model) }] : [];
+            }),
+          },
+          estimatedMaxTokens: num(d.estimatedMaxTokens) ?? null,
+          estimatedMaxCostUsd: num(d.estimatedMaxCostUsd) ?? null,
+        };
+        return next;
+      }
+      if (d.paused === true) next.paused = true;
+      else if (d.paused === false) next.paused = false;
+      const status = str(d.statusMessage);
+      if (status) {
+        next.agents = patchAgent(state.agents, e.agentId, (a) => ({
+          ...a,
+          status: "PAUSED",
+          latestLine: status,
+        }));
+        next.transcript = [...state.transcript, entry("status", status)];
+      }
       return next;
     }
     case "FALLBACK": {
@@ -168,6 +221,10 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     }
     case "SPEAKING": {
       const message = str(d.message) ?? str(d.text) ?? "";
+      if (e.agentId === "user") {
+        next.transcript = [...state.transcript, entry("director", message)];
+        return next;
+      }
       const budget = rec(d.budget);
       const ratio = num(budget?.remainingRatio);
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({
@@ -183,6 +240,8 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
       return next;
     }
     case "DONE": {
+      next.paused = false;
+      next.pendingApproval = null;
       if (d.cancelled === true) {
         next.phase = "done";
         next.agents = state.agents.map((a) => ({ ...a, status: "DONE" }));
@@ -207,6 +266,8 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "ERROR": {
       const message = str(d.message) ?? str(d.reason) ?? "Quest failed";
       next.phase = "error";
+      next.paused = false;
+      next.pendingApproval = null;
       next.error = message;
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({ ...a, status: "ERROR" }));
       next.transcript = [...state.transcript, entry("error", message)];

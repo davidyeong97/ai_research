@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ActionBar } from "./ActionBar";
+import { ApprovalDialog } from "./ApprovalDialog";
 import { ArenaPanel } from "./ArenaPanel";
 import { TranscriptPanel } from "./TranscriptPanel";
 import { useQuestStream } from "@/hooks/useQuestStream";
@@ -14,7 +15,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 
 export function AppShell() {
   const [tab, setTab] = useState<Tab>("arena");
-  const { state, starting, connectionError, start } = useQuestStream();
+  const { state, starting, connectionError, start, control, approve } = useQuestStream();
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-indigo-950 pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] font-mono text-indigo-50">
       <header className="flex-none border-b-4 border-amber-200/80 px-3 py-2 text-center text-lg font-bold tracking-widest text-amber-300">
@@ -27,7 +28,7 @@ export function AppShell() {
           aria-label="Visual Arena"
           className={`min-h-0 flex-1 ${tab === "arena" ? "block" : "hidden"} lg:block`}
         >
-          <ArenaPanel agents={state.agents} />
+          <ArenaPanel agents={state.agents} paused={state.paused} />
         </section>
         <section
           id="panel-stream"
@@ -42,7 +43,13 @@ export function AppShell() {
         onSubmit={(q) => void start(q)}
         busy={starting || state.phase === "running"}
         error={connectionError}
+        running={state.phase === "running" && !state.pendingApproval}
+        paused={state.paused}
+        onControl={control}
       />
+      {state.pendingApproval && (
+        <ApprovalDialog approval={state.pendingApproval} onDecide={approve} />
+      )}
       <nav
         role="tablist"
         aria-label="Views"

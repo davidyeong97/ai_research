@@ -1,7 +1,7 @@
 import { AgentCard } from "./AgentCard";
 import type { AgentState } from "@/lib/client/questReducer";
 
-export function ArenaPanel({ agents }: { agents: AgentState[] }) {
+export function ArenaPanel({ agents, paused = false }: { agents: AgentState[]; paused?: boolean }) {
   return (
     <div className="h-full overflow-y-auto overscroll-contain p-3" data-testid="arena-scroll">
       <h2 className="mb-3 text-sm font-bold uppercase tracking-widest text-amber-300">
@@ -14,7 +14,7 @@ export function ArenaPanel({ agents }: { agents: AgentState[] }) {
       )}
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
         {agents.map((a) => (
-          <AgentCard key={a.id} agent={a} />
+          <AgentCard key={a.id} agent={a} paused={paused} />
         ))}
       </ul>
     </div>
