@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import { Markdown } from "./Markdown";
 import { FinalAnswer } from "./FinalAnswer";
-import type { TranscriptEntry } from "@/lib/client/questReducer";
+import { safeHost } from "./InspectPanel";
+import type { InspectSelection, TranscriptEntry } from "@/lib/client/questReducer";
 
 const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
   message: "border-amber-200/60 bg-indigo-950/80",
@@ -16,9 +17,11 @@ const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
 export function TranscriptPanel({
   entries,
   finalAnswer,
+  onInspect,
 }: {
   entries: TranscriptEntry[];
   finalAnswer?: string | null;
+  onInspect?: (sel: InspectSelection) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -44,7 +47,15 @@ export function TranscriptPanel({
                   ? "director-entry"
                   : "transcript-entry"
             }
-            className={`border-2 p-2 text-sm ${KIND_STYLE[e.kind]}`}
+            onClick={
+              e.kind === "message" && onInspect
+                ? (ev) => {
+                    if ((ev.target as HTMLElement).closest("a,button")) return;
+                    onInspect({ agentId: e.agentId, entryId: e.id });
+                  }
+                : undefined
+            }
+            className={`border-2 p-2 text-sm ${KIND_STYLE[e.kind]} ${e.kind === "message" && onInspect ? "cursor-pointer" : ""}`}
           >
             <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-indigo-300">
               <span>
@@ -60,6 +71,45 @@ export function TranscriptPanel({
               <p className="whitespace-pre-wrap break-words">{e.text}</p>
             ) : (
               <Markdown>{e.text}</Markdown>
+            )}
+            {e.kind === "message" && (
+              <div className="mt-1 flex flex-wrap items-center gap-1">
+                {(e.citations ?? []).slice(0, 3).map((c, i) => {
+                  const host = safeHost(c.url);
+                  return host ? (
+                    <a
+                      key={`${c.url}-${i}`}
+                      href={c.url}
+                      target="_blank"
+                      rel="noopener noreferrer nofollow"
+                      data-testid="citation-chip"
+                      className="max-w-[10rem] truncate border border-sky-300/60 bg-sky-950/60 px-1.5 py-0.5 text-[10px] text-sky-200 hover:text-amber-300"
+                    >
+                      {c.title || host}
+                    </a>
+                  ) : null;
+                })}
+                {(e.citations?.length ?? 0) > 3 && (
+                  <button
+                    type="button"
+                    data-testid="citation-more"
+                    onClick={() => onInspect?.({ agentId: e.agentId, entryId: e.id })}
+                    className="border border-amber-300/60 px-1.5 py-0.5 text-[10px] text-amber-200"
+                  >
+                    +{(e.citations?.length ?? 0) - 3} more
+                  </button>
+                )}
+                {onInspect && (
+                  <button
+                    type="button"
+                    data-testid="inspect-message"
+                    onClick={() => onInspect({ agentId: e.agentId, entryId: e.id })}
+                    className="ml-auto min-h-8 px-2 text-[10px] uppercase text-amber-300 underline"
+                  >
+                    Inspect
+                  </button>
+                )}
+              </div>
             )}
           </li>
         ))}

@@ -66,6 +66,40 @@ describe("questReducer", () => {
     expect(s.transcript.map((t) => t.text)).toEqual(["Hello", "Again"]);
   });
 
+  it("SPEAKING parses thought, citations, model, cost, latency defensively", () => {
+    const s = run(
+      started(),
+      ev({
+        agentId: "claude",
+        action: "SPEAKING",
+        data: {
+          message: "Hi",
+          thought: "because",
+          citations: [{ url: "https://a.com/x", title: "A" }, { url: 5 }, "bad", { url: "https://b.org" }],
+          model: "m/x",
+          costUsd: 0.002,
+          latencyMs: 1200,
+        },
+      }),
+      ev({
+        agentId: "claude",
+        action: "SPEAKING",
+        data: { message: "Bad", thought: 3, citations: "nope", latencyMs: "x" },
+      }),
+    );
+    expect(s.transcript[0]).toMatchObject({
+      thought: "because",
+      model: "m/x",
+      costUsd: 0.002,
+      latencyMs: 1200,
+      citations: [{ url: "https://a.com/x", title: "A" }, { url: "https://b.org" }],
+    });
+    expect(s.transcript[1].thought).toBeUndefined();
+    expect(s.transcript[1].citations).toBeUndefined();
+    expect(s.agents[0].lastThought).toBe("because");
+    expect(s.agents[0].lastCitations).toHaveLength(2);
+  });
+
   it("FALLBACK records model info", () => {
     const s = run(
       started(),

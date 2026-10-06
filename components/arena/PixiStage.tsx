@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Application, Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
-import type { AgentState } from "@/lib/client/questReducer";
+import type { AgentState, InspectSelection } from "@/lib/client/questReducer";
 import { orderAgents, seatPositions, spriteScale, tableGeometry } from "./layout";
 import { placeBubble, truncateLine, type Rect } from "./bubbles";
 import { badgeText, statusLabel } from "./statusLabels";
@@ -126,7 +126,17 @@ export function trackSpeaker(
   return { lines, speaker };
 }
 
-export default function PixiStage({ agents }: { agents: AgentState[] }) {
+export default function PixiStage({
+  agents,
+  onInspect,
+}: {
+  agents: AgentState[];
+  onInspect?: (sel: InspectSelection) => void;
+}) {
+  const onInspectRef = useRef(onInspect);
+  useEffect(() => {
+    onInspectRef.current = onInspect;
+  }, [onInspect]);
   const [tracked, setTracked] = useState<{ lines: Record<string, string>; speaker: string | null }>(
     () => trackSpeaker({ lines: {}, speaker: null }, agents),
   );
@@ -208,6 +218,10 @@ export default function PixiStage({ agents }: { agents: AgentState[] }) {
         }
         if (!v) {
           const root = new Container();
+          root.eventMode = "static";
+          root.cursor = "pointer";
+          const agentId = a.id;
+          root.on?.("pointertap", () => onInspectRef.current?.({ agentId }));
           const body = new Container();
           const sprite = new Sprite(textureFor(a.avatar));
           sprite.anchor.set(0.5, 1);
@@ -452,6 +466,11 @@ export default function PixiStage({ agents }: { agents: AgentState[] }) {
         {orderAgents(agents).map((a) => (
           <li key={a.id}>
             {a.role}: {statusLabel(a.status)}, {Math.round(a.remainingRatio * 100)}% budget remaining
+            {onInspect && (
+              <button type="button" onClick={() => onInspect({ agentId: a.id })}>
+                Inspect {a.role}
+              </button>
+            )}
             {a.latestLine && (
               <span
                 data-testid="stage-a11y-line"
