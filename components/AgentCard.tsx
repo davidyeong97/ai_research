@@ -1,4 +1,5 @@
 import { AVATAR_GLYPH } from "./mock-data";
+import { statusLabel } from "./arena/statusLabels";
 import type { AgentState, AgentStatus } from "@/lib/client/questReducer";
 
 const STATUS_STYLE: Record<AgentStatus, string> = {
@@ -37,9 +38,9 @@ export function HpBar({ ratio: raw }: { ratio: number }) {
 export function StatusBadge({ status }: { status: AgentStatus }) {
   return (
     <span
-      className={`inline-block px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_STYLE[status]}`}
+      className={`inline-block px-1.5 py-0.5 text-[10px] font-bold tracking-wider ${STATUS_STYLE[status]}`}
     >
-      {status}
+      {statusLabel(status)}
     </span>
   );
 }
