@@ -179,7 +179,7 @@ describe("AppShell HITL controls", () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual({ url: "/api/quests/q1/control", body: { action: "pause" } });
     act(() => es.emit(mkEvent(1, "lead", "PAUSED", { paused: true })));
-    expect(screen.getAllByText("PAUSED").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Paused ⏸️").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1].body).toEqual({ action: "resume" });
