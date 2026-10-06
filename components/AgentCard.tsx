@@ -1,6 +1,11 @@
-import { AVATAR_GLYPH, type MockAgent } from "./mock-data";
+import { AVATAR_GLYPH } from "./mock-data";
+import type { AgentState, AgentStatus } from "@/lib/client/questReducer";
 
-const STATUS_STYLE: Record<MockAgent["status"], string> = {
+const STATUS_STYLE: Record<AgentStatus, string> = {
+  IDLE: "bg-zinc-600 text-white",
+  FACT_CHECKING: "bg-orange-400 text-black",
+  FALLBACK: "bg-fuchsia-400 text-black",
+  CONSENSUS: "bg-teal-300 text-black",
   THINKING: "bg-amber-400 text-black",
   SEARCHING: "bg-sky-400 text-black",
   SPEAKING: "bg-emerald-400 text-black",
@@ -9,16 +14,16 @@ const STATUS_STYLE: Record<MockAgent["status"], string> = {
   ERROR: "bg-red-500 text-white",
 };
 
-export function HpBar({ used, budget }: { used: number; budget: number }) {
-  const ratio = Math.max(0, Math.min(1, 1 - used / budget));
+export function HpBar({ ratio: raw }: { ratio: number }) {
+  const ratio = Math.max(0, Math.min(1, raw));
   const color = ratio > 0.5 ? "bg-emerald-500" : ratio > 0.2 ? "bg-amber-400" : "bg-red-500";
   return (
     <div
       role="progressbar"
       aria-label="Token budget remaining"
       aria-valuemin={0}
-      aria-valuemax={budget}
-      aria-valuenow={budget - used}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(ratio * 100)}
       className="h-2.5 w-full border-2 border-black bg-zinc-800"
     >
       <div
@@ -29,7 +34,7 @@ export function HpBar({ used, budget }: { used: number; budget: number }) {
   );
 }
 
-export function StatusBadge({ status }: { status: MockAgent["status"] }) {
+export function StatusBadge({ status }: { status: AgentStatus }) {
   return (
     <span
       className={`inline-block px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${STATUS_STYLE[status]}`}
@@ -40,7 +45,7 @@ export function StatusBadge({ status }: { status: MockAgent["status"] }) {
 }
 
 /** Full card at sm+, compact status row on narrow screens (README §10 rule 4). */
-export function AgentCard({ agent }: { agent: MockAgent }) {
+export function AgentCard({ agent }: { agent: AgentState }) {
   const glyph = AVATAR_GLYPH[agent.avatar] ?? "❓";
   return (
     <li
@@ -57,7 +62,7 @@ export function AgentCard({ agent }: { agent: MockAgent }) {
             <span className="truncate text-xs font-bold">{agent.role}</span>
             <StatusBadge status={agent.status} />
           </div>
-          <HpBar used={agent.tokensUsed} budget={agent.tokenBudget} />
+          <HpBar ratio={agent.remainingRatio} />
         </div>
       </div>
       {/* full card */}
@@ -74,11 +79,17 @@ export function AgentCard({ agent }: { agent: MockAgent }) {
             <StatusBadge status={agent.status} />
           </div>
         </div>
-        <HpBar used={agent.tokensUsed} budget={agent.tokenBudget} />
+        <HpBar ratio={agent.remainingRatio} />
         <div className="text-[10px] text-indigo-200">
-          {agent.tokensUsed.toLocaleString()} / {agent.tokenBudget.toLocaleString()} tokens
+          {agent.tokensUsed.toLocaleString()} tokens
+          {(agent.modelUsed ?? agent.model) && <> · {agent.modelUsed ?? agent.model}</>}
+          {agent.fallback && <span className="text-fuchsia-300"> · fallback</span>}
         </div>
-        <p className="border-2 border-black bg-black/40 p-2 text-sm italic">“{agent.latestLine}”</p>
+        {agent.latestLine && (
+          <p className="max-h-32 overflow-y-auto whitespace-pre-wrap border-2 border-black bg-black/40 p-2 text-sm italic">
+            “{agent.latestLine}”
+          </p>
+        )}
       </div>
     </li>
   );
