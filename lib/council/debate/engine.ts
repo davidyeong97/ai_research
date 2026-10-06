@@ -10,6 +10,7 @@ import {
   buildAgentPrompt,
   buildSynthesisPrompt,
   type DebateAgent,
+  buildSummaryPrompt,
   type HistoryEntry,
   type PromptBuilder,
   type SynthesisPromptBuilder,
@@ -27,7 +28,7 @@ export interface CheckpointContext {
   round: number;
   /** Agent about to speak ("lead" before synthesis). */
   agentId: string;
-  phase: "agent" | "synthesis";
+  phase: "agent" | "synthesis" | "summary";
   history: readonly HistoryEntry[];
 }
 
@@ -39,11 +40,13 @@ export interface DebateOptions {
   /** Hook: awaited before every turn (pause/inject/summarize extension point). */
   checkpoint?: (ctx: CheckpointContext) => Promise<void> | void;
   agentMaxTokens?: number;
+  summaryMaxTokens?: number;
   synthesisMaxTokens?: number;
 }
 
 const AGENT_MAX_TOKENS = 400;
 const SYNTHESIS_MAX_TOKENS = 700;
+const SUMMARY_MAX_TOKENS = 500; // ~400-token target plus headroom
 
 export async function runDebate(
   d: DebateDeps,
@@ -56,6 +59,7 @@ export async function runDebate(
   const buildSynthesis = opts.buildSynthesis ?? buildSynthesisPrompt;
   const checkpoint = opts.checkpoint ?? (() => undefined);
   const agentMax = opts.agentMaxTokens ?? AGENT_MAX_TOKENS;
+  const summaryMax = opts.summaryMaxTokens ?? SUMMARY_MAX_TOKENS;
   const synthMax = opts.synthesisMaxTokens ?? SYNTHESIS_MAX_TOKENS;
 
   const budget = new BudgetTracker(plan.budgetCapTokens, costCapFromEnv());
@@ -64,6 +68,7 @@ export async function runDebate(
   const history: HistoryEntry[] = [];
   let totalCostUsd = 0;
   let currentRound = 1;
+  let summary: string | undefined;
 
   const emit = (
     round: number,
@@ -89,7 +94,8 @@ export async function runDebate(
     models: string[];
     messages: ChatMessage[];
     maxTokens: number;
-    rowAction: "SPEAKING" | "CONSENSUS";
+    rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY";
+    extraData?: Record<string, unknown>;
   }): Promise<string> {
     const { round, agentId, models, messages, maxTokens } = args;
     const promptEstimate = Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4);
@@ -133,6 +139,7 @@ export async function runDebate(
     } finally {
       // Surface what was spent even if recording breached a cap.
       emit(round, agentId, "SPEAKING", tokens, {
+        ...args.extraData,
         message: text,
         costUsd,
         model: usage?.modelUsed ?? models[0],
@@ -149,6 +156,26 @@ export async function runDebate(
     for (let round = 1; round <= maxRounds; round++) {
       currentRound = round;
       const roundEntries: HistoryEntry[] = [];
+      if (round >= 3) {
+        // Compact rounds 1..round-1 so prompts don't grow quadratically.
+        await checkpoint({ questId, round, agentId: "lead", phase: "summary", history });
+        emit(round, "lead", "THINKING", 0, { statusMessage: "Summarizing debate…" });
+        summary = await turn({
+          round,
+          agentId: "lead",
+          models: LEAD_MODELS,
+          messages: buildSummaryPrompt({
+            query,
+            previousSummary: summary,
+            // Rounds already folded into `summary` are not re-sent.
+            entries: history.filter((e) => (summary ? e.round === round - 1 : true)),
+            upToRound: round - 1,
+          }),
+          maxTokens: summaryMax,
+          rowAction: "SUMMARY",
+          extraData: { summary: true },
+        });
+      }
       for (const agent of agents) {
         await checkpoint({ questId, round, agentId: agent.id, phase: "agent", history });
         emit(round, agent.id, "THINKING");
@@ -160,6 +187,7 @@ export async function runDebate(
           // Peers in the same round must not see each other's current-round output.
           history,
           agents,
+          summary,
         });
         const models = [agent.model, ...agent.fallbackModels].filter((m): m is string => !!m);
         const text = await turn({

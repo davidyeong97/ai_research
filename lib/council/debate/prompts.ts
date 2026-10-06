@@ -26,6 +26,8 @@ export interface PromptContext {
   history: readonly HistoryEntry[];
   /** All agents in this debate (including `agent`). */
   agents: readonly DebateAgent[];
+  /** Lead-written summary of rounds 1..round-1 (set for round >= 3). */
+  summary?: string;
 }
 
 export interface SynthesisContext {
@@ -74,8 +76,9 @@ export const buildAgentPrompt: PromptBuilder = (ctx) => {
   const own = lastOwnMessage(ctx);
   const parts = [
     `Question:\n${query}`,
+    ctx.summary ? `Summary of the debate so far (rounds 1-${round - 1}):\n${ctx.summary}` : "",
     own ? `Your previous position:\n${own.text}` : "",
-    `Other members' latest positions:\n${peers.map(fmt).join("\n\n") || "(none)"}`,
+    `Other members' positions from round ${round - 1}:\n${peers.map(fmt).join("\n\n") || "(none)"}`,
     "Critique and rebut weak points in their positions, acknowledge strong ones, and refine your own proposal.",
   ].filter(Boolean);
   return [
@@ -103,3 +106,37 @@ export const buildSynthesisPrompt: SynthesisPromptBuilder = (ctx) => {
     },
   ];
 };
+
+export interface SummaryContext {
+  query: string;
+  /** Summary of earlier rounds, if one already exists. */
+  previousSummary?: string;
+  /** Entries not yet covered by `previousSummary`. */
+  entries: readonly HistoryEntry[];
+  upToRound: number;
+}
+
+/** Lead prompt that compacts the debate so far (target <= ~400 tokens). */
+export function buildSummaryPrompt(ctx: SummaryContext): ChatMessage[] {
+  const transcript = ctx.entries.map(fmt).join("\n\n");
+  return [
+    {
+      role: "system",
+      content:
+        "You are the lead of a council of AI experts. Summarize the debate so far in at most " +
+        "400 tokens: each member's key positions, points of agreement, and open disagreements. " +
+        "Be faithful and neutral; do not add new arguments.",
+    },
+    {
+      role: "user",
+      content: [
+        `Question:\n${ctx.query}`,
+        ctx.previousSummary ? `Summary of earlier rounds:\n${ctx.previousSummary}` : "",
+        `Transcript (through round ${ctx.upToRound}):\n${transcript || "(none)"}`,
+        "Write the compact summary.",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    },
+  ];
+}
