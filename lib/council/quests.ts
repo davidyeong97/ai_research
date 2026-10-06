@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema, type DB } from "../db";
 import type { OrchestrationPlan } from "../shared";
-import { BudgetExceeded, BudgetTracker } from "./budget";
+import { BudgetExceeded, BudgetTracker, CostCapExceeded, costCapFromEnv } from "./budget";
 import { getBus, type EventBus } from "./bus";
 import { collectChat, OpenRouterClient, type LLMClient } from "./llm";
 import { LeadOrchestrator } from "./orchestrator";
@@ -67,7 +67,7 @@ export async function runPlaceholder(
     tokens = 0,
     data = {},
   ) => d.bus.publish({ questId, round: 1, agentId, action, tokensUsed: tokens, data });
-  const budget = new BudgetTracker(plan.budgetCapTokens);
+  const budget = new BudgetTracker(plan.budgetCapTokens, costCapFromEnv());
   const MAX_TOKENS = 300;
   let totalCostUsd = 0;
   try {
@@ -119,6 +119,7 @@ export async function runPlaceholder(
           },
           agent.id,
         );
+        budget.recordCost(costUsd, agent.id);
       } finally {
         // Surface what was spent even if recording breached the cap.
         emit(agent.id, "SPEAKING", tokens, {
@@ -129,6 +130,8 @@ export async function runPlaceholder(
             used: budget.used,
             remaining: budget.remaining,
             remainingRatio: budget.remainingRatio,
+            costUsd: budget.costUsd,
+            costCapUsd: budget.costCapUsd,
           },
         });
       }
@@ -144,23 +147,31 @@ export async function runPlaceholder(
       .run();
   } catch (e) {
     const exceeded = e instanceof BudgetExceeded;
+    const costExceeded = e instanceof CostCapExceeded;
     emit(
       "lead",
       "ERROR",
       0,
-      exceeded
+      costExceeded
         ? {
-            reason: "budget_exceeded",
-            cap: e.cap,
-            used: budget.used,
+            reason: "cost_cap_exceeded",
+            costCapUsd: e.costCapUsd,
+            spentUsd: e.spentUsd,
             message: e.message,
           }
-        : { message: e instanceof Error ? e.message : String(e) },
+        : exceeded
+          ? {
+              reason: "budget_exceeded",
+              cap: e.cap,
+              used: budget.used,
+              message: e.message,
+            }
+          : { message: e instanceof Error ? e.message : String(e) },
     );
     d.db
       .update(schema.sessions)
       .set({
-        status: exceeded ? "budget_exceeded" : "error",
+        status: costExceeded ? "cost_cap_exceeded" : exceeded ? "budget_exceeded" : "error",
         totalTokens: budget.used,
         totalCostUsd,
       })
