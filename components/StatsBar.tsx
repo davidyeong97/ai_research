@@ -1,4 +1,5 @@
 import type { QuestState } from "@/lib/client/questReducer";
+import { SoundToggle } from "./SoundToggle";
 
 export type PhaseLabel = "Planning" | "Debating" | "Paused" | "Verdict" | "Error" | "Idle";
 
@@ -59,6 +60,7 @@ export function StatsBar({ state }: { state: QuestState }) {
       >
         {phase}
       </span>
+      <SoundToggle />
     </div>
   );
 }
