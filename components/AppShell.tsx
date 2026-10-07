@@ -61,6 +61,7 @@ export function AppShell() {
           <TranscriptPanel
             entries={state.transcript}
             finalAnswer={state.phase === "done" ? state.finalAnswer : null}
+            questId={state.questId}
             onInspect={setSelected}
           />
         </section>

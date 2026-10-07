@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { Markdown } from "./Markdown";
+import { ExportControl } from "./ExportControl";
 import { FinalAnswer } from "./FinalAnswer";
 import { safeHost } from "./InspectPanel";
 import type { InspectSelection, TranscriptEntry } from "@/lib/client/questReducer";
@@ -17,10 +18,12 @@ const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
 export function TranscriptPanel({
   entries,
   finalAnswer,
+  questId,
   onInspect,
 }: {
   entries: TranscriptEntry[];
   finalAnswer?: string | null;
+  questId?: string | null;
   onInspect?: (sel: InspectSelection) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
@@ -30,9 +33,12 @@ export function TranscriptPanel({
   const visible = finalAnswer ? entries.filter((e) => e.kind !== "final") : entries;
   return (
     <div className="h-full overflow-y-auto overscroll-contain p-3" data-testid="transcript-scroll">
-      <h2 className="mb-3 text-sm font-bold uppercase tracking-widest text-amber-300">
-        Discussion Stream
-      </h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-amber-300">
+          Discussion Stream
+        </h2>
+        <ExportControl questId={questId ?? null} />
+      </div>
       {visible.length === 0 && !finalAnswer && (
         <p className="text-sm text-indigo-300">Nothing said yet.</p>
       )}
