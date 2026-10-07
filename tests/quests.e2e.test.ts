@@ -46,7 +46,9 @@ describe("quests e2e", () => {
     const params = { params: Promise.resolve({ id: questId }) };
     const first = await readSse(await GET(new Request("http://x/s"), params));
     const n = plan.executionPlan.assignedAgents.length;
-    expect(first).toHaveLength(n * plan.executionPlan.maxRounds * 2 + 3);
+    const factCheckEvents =
+      plan.executionPlan.maxRounds >= 2 || plan.complexityScore >= 4 ? 2 : 0;
+    expect(first).toHaveLength(n * plan.executionPlan.maxRounds * 2 + 3 + factCheckEvents);
     expect(first.map((e) => e.id)).toEqual(first.map((_, i) => i + 1));
     expect(first.at(-1)!.event.action).toBe("DONE");
     expect(first[0].event.action).toBe("THINKING");

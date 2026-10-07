@@ -46,3 +46,10 @@ export const events = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.questId, t.seq] })],
 );
+
+export const toolCache = sqliteTable("tool_cache", {
+  key: text("key").primaryKey(),
+  value: text("value", { mode: "json" }).notNull(),
+  createdAt: integer("created_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});

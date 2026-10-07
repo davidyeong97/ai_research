@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { initialQuestState, questReducer, type QuestState } from "@/lib/client/questReducer";
+import { playSound, unlockAudio } from "@/lib/client/sound";
 import { CouncilEventSchema, OrchestrationPlanSchema } from "@/lib/shared";
 
 const RECONNECT_MS = 1500;
 const MAX_RECONNECTS = 20;
+/** Events arriving this soon after a reconnect are a replay burst: stay silent. */
+const REPLAY_QUIET_MS = 400;
 
 export interface UseQuestStream {
   state: QuestState;
@@ -27,6 +30,7 @@ export function useQuestStream(): UseQuestStream {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastIdRef = useRef(0);
   const genRef = useRef(0);
+  const quietUntilRef = useRef(0);
   const connectRef = useRef<(questId: string, gen: number, attempt: number) => void>(() => {});
 
   const close = useCallback(() => {
@@ -41,6 +45,12 @@ export function useQuestStream(): UseQuestStream {
     const qs = lastIdRef.current > 0 ? `?lastEventId=${lastIdRef.current}` : "";
     const es = new EventSource(`/api/quests/${encodeURIComponent(questId)}/stream${qs}`);
     sourceRef.current = es;
+    // Any (re)open after the first attempt or a browser auto-retry replays history.
+    let reopened = attempt > 0;
+    es.onopen = () => {
+      if (reopened) quietUntilRef.current = Date.now() + REPLAY_QUIET_MS;
+      reopened = true;
+    };
     es.onmessage = (msg: MessageEvent) => {
       if (gen !== genRef.current) return;
       let json: unknown;
@@ -51,7 +61,9 @@ export function useQuestStream(): UseQuestStream {
       }
       const parsed = CouncilEventSchema.safeParse(json);
       if (!parsed.success) return;
+      const isNew = parsed.data.id > lastIdRef.current;
       lastIdRef.current = Math.max(lastIdRef.current, parsed.data.id);
+      if (isNew && Date.now() >= quietUntilRef.current) playSound(parsed.data.action);
       dispatch({ type: "event", event: parsed.data });
       if (parsed.data.action === "DONE" || parsed.data.action === "ERROR") {
         es.close();
@@ -140,6 +152,19 @@ export function useQuestStream(): UseQuestStream {
   const approve = useCallback((approved: boolean) => post("approve", { approved }), [post]);
 
   useEffect(() => close, [close]);
+
+  // Browsers only allow audio after a user gesture (iOS Safari especially).
+  useEffect(() => {
+    const events = ["pointerdown", "keydown", "touchend"] as const;
+    const unlock = () => {
+      unlockAudio();
+      for (const e of events) window.removeEventListener(e, unlock);
+    };
+    for (const e of events) window.addEventListener(e, unlock);
+    return () => {
+      for (const e of events) window.removeEventListener(e, unlock);
+    };
+  }, []);
 
   return { state, starting, connectionError, start, control, approve };
 }

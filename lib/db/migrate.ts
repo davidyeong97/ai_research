@@ -35,6 +35,13 @@ const STATEMENTS = [
     payload TEXT NOT NULL,
     PRIMARY KEY (quest_id, seq)
   )`,
+  `CREATE TABLE IF NOT EXISTS tool_cache (
+    key TEXT PRIMARY KEY NOT NULL,
+    value TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS tool_cache_expires_idx ON tool_cache (expires_at)`,
 ];
 
 export function migrate(sqlite: Database.Database): void {

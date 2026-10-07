@@ -4,11 +4,13 @@ import { schema } from "../../db";
 import type { OrchestrationPlan } from "../../shared";
 import { BudgetExceeded, BudgetTracker, CostCapExceeded, costCapFromEnv } from "../budget";
 import type { EventBus } from "../bus";
+import { cacheKey, cacheGet, cacheSet, purgeExpired } from "../cache";
 import type { ChatMessage, LLMClient, LLMUsage } from "../llm";
 import { LEAD_MODELS } from "../roster";
 import { sanitizeText } from "./sanitize";
 import {
   buildAgentPrompt,
+  buildFactCheckPrompt,
   buildSynthesisPrompt,
   type DebateAgent,
   buildSummaryPrompt,
@@ -29,7 +31,7 @@ export interface CheckpointContext {
   round: number;
   /** Agent about to speak ("lead" before synthesis). */
   agentId: string;
-  phase: "agent" | "synthesis" | "summary";
+  phase: "agent" | "synthesis" | "summary" | "factcheck";
   history: readonly HistoryEntry[];
 }
 
@@ -94,6 +96,7 @@ export async function runDebate(
   let totalCostUsd = 0;
   let currentRound = 1;
   let summary: string | undefined;
+  let factCheck: string | undefined;
 
   const emit = (
     round: number,
@@ -119,7 +122,7 @@ export async function runDebate(
     models: string[];
     messages: ChatMessage[];
     maxTokens: number;
-    rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY";
+    rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY" | "FACT_CHECK";
     extraData?: Record<string, unknown>;
     webSearch?: { maxResults: number };
   }): Promise<string> {
@@ -135,12 +138,28 @@ export async function runDebate(
       emit(round, agentId, "SEARCHING", 0, { statusMessage: "Searching the web…" });
     }
     const startedAt = Date.now();
-    for await (const c of d.llm.streamChat({ messages, models, maxTokens, webSearch: args.webSearch })) {
-      if (c.type === "text") text += c.delta;
-      else if (c.type === "reasoning") reasoning += c.delta;
-      else if (c.type === "usage") usage = c.usage;
-      else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
-      else emit(round, agentId, "FALLBACK", 0, { primary: c.primary, modelUsed: c.modelUsed });
+    const key = args.webSearch
+      ? cacheKey({ tool: "web_search", maxResults: args.webSearch.maxResults, models, messages })
+      : undefined;
+    const hit = key ? cacheGet(d.db, key) : undefined;
+    let cached = false;
+    if (hit) {
+      cached = true;
+      text = hit.text;
+      reasoning = hit.reasoning ?? "";
+      citations.push(...hit.citations);
+    } else {
+      for await (const c of d.llm.streamChat({ messages, models, maxTokens, webSearch: args.webSearch })) {
+        if (c.type === "text") text += c.delta;
+        else if (c.type === "reasoning") reasoning += c.delta;
+        else if (c.type === "usage") usage = c.usage;
+        else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
+        else emit(round, agentId, "FALLBACK", 0, { primary: c.primary, modelUsed: c.modelUsed });
+      }
+      if (key && text) {
+        cacheSet(d.db, key, { text, reasoning: reasoning || undefined, citations, model: usage?.modelUsed });
+        purgeExpired(d.db);
+      }
     }
     const latencyMs = Date.now() - startedAt;
     const tokens = (usage?.promptTokens ?? 0) + (usage?.completionTokens ?? 0);
@@ -172,9 +191,10 @@ export async function runDebate(
       emit(round, agentId, "SPEAKING", tokens, {
         ...args.extraData,
         ...(args.webSearch ? { citations } : {}),
+        ...(cached ? { cached: true } : {}),
         message: text,
         costUsd,
-        model: usage?.modelUsed ?? models[0],
+        model: usage?.modelUsed ?? (cached ? hit?.model : undefined) ?? models[0],
         budget: snapshot(),
       });
     }
@@ -220,6 +240,7 @@ export async function runDebate(
           history,
           agents,
           summary,
+          factCheck,
         });
         const models = [agent.model, ...agent.fallbackModels].filter((m): m is string => !!m);
         const text = await turn({
@@ -236,6 +257,30 @@ export async function runDebate(
         roundEntries.push({ round, agentId: agent.id, role: agent.role, text });
       }
       history.push(...roundEntries);
+
+      if (round === 1 && (maxRounds >= 2 || plan.complexityScore >= 4) && agents.length > 0) {
+        const checker = agents.find((a) => a.role === "scout" || a.avatar === "scout") ?? agents[0];
+        await checkpoint({ questId, round, agentId: checker.id, phase: "factcheck", history });
+        emit(round, checker.id, "FACT_CHECKING", 0, { statusMessage: "Fact-checking peers' claims…" });
+        const claims = roundEntries.filter((e) => e.agentId !== checker.id);
+        const verdict = await turn({
+          round,
+          agentId: checker.id,
+          models: [checker.model, ...checker.fallbackModels].filter((m): m is string => !!m),
+          messages: buildFactCheckPrompt({
+            query,
+            agent: checker,
+            round,
+            entries: claims,
+            searchEnabled,
+          }),
+          maxTokens: agentMax,
+          rowAction: "FACT_CHECK",
+          extraData: { factCheck: true },
+          webSearch: searchEnabled ? { maxResults: webSearchMaxResults() } : undefined,
+        });
+        factCheck = verdict.trim() || undefined;
+      }
     }
 
     // Lead synthesis.
@@ -246,7 +291,7 @@ export async function runDebate(
       round: maxRounds,
       agentId: "lead",
       models: LEAD_MODELS,
-      messages: buildSynthesis({ query, maxRounds, history, agents }),
+      messages: buildSynthesis({ query, maxRounds, history, agents, factCheck }),
       maxTokens: synthMax,
       rowAction: "CONSENSUS",
     });

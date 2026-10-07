@@ -192,7 +192,7 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 
 - [x] Implement multi-turn debate loops and context truncation/summarization.
 - [x] Add sandboxed web search tool pipeline.
-- [ ] Add fact-checking tool pipeline (the `FACT_CHECKING` event is defined but not yet emitted by the debate engine).
+- [x] Add fact-checking tool pipeline (after round 1 a fact-checker agent verifies peers' claims, emitting `FACT_CHECKING`; the verdict feeds later rounds).
 - [x] Implement Human-In-The-Loop pause/resume/inject mechanisms.
 
 ### Phase 3: Game UI & Frontend Integration
@@ -203,9 +203,10 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 
 ### Phase 4: Security, Caching & Polish
 
-- [ ] Implement Redis semantic/tool caching.
+- [x] Implement tool caching (SQLite exact-match cache; semantic cache not implemented).
 - [x] Apply prompt injection sanitization across inter-agent communications.
-- [ ] Add sound effects (8-bit text audio, battle chimes) and transcript export features.
+- [x] Add sound effects (8-bit text audio, battle chimes).
+- [x] Add transcript export (Markdown and JSON download).
 
 ---
 
@@ -214,9 +215,12 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 ```bash
 npm ci
 cp .env.example .env.local     # then set APP_PASSWORD and OPENROUTER_API_KEY
+npm run db:migrate             # creates/updates the SQLite DB at DATABASE_PATH
 npm run build
 npm run start:lan              # same as: next start -H 0.0.0.0
 ```
+
+Required env vars: `APP_PASSWORD` (shared login password; the app refuses to serve without it) and `OPENROUTER_API_KEY` (server-side only). Use `npm start` instead of `start:lan` to listen on localhost only.
 
 Then open `http://<host-vpn-ip>:3000` on your phone and log in with `APP_PASSWORD`.
 
@@ -233,3 +237,5 @@ Then open `http://<host-vpn-ip>:3000` on your phone and log in with `APP_PASSWOR
 2. **Standardized Event Schema**: All backend agent actions MUST emit uniform event types (`THINKING`, `SEARCHING`, `SPEAKING`, `PAUSED`, `DONE`, `ERROR`).
 3. **Graceful Fallbacks**: Always provide fallbacks for model timeouts or API rate limits so the multi-agent discussion completes uninterrupted.
 4. **Mobile First UI Resilience**: Canvas/game displays must gracefully resize into compact status bars on narrower viewports.
+
+> Note: semantic (embedding-based) caching is out of scope; only exact-match caching of web-search-backed calls is implemented (`TOOL_CACHE_ENABLED`, `TOOL_CACHE_TTL_HOURS`).
