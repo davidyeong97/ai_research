@@ -5,4 +5,6 @@ export async function register(): Promise<void> {
   g.__councilRecovered = true;
   const { recoverStrandedQuests } = await import("./lib/council/recovery");
   recoverStrandedQuests();
+  const { purgeExpired } = await import("./lib/council/cache");
+  purgeExpired();
 }
