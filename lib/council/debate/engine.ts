@@ -4,6 +4,7 @@ import { schema } from "../../db";
 import type { OrchestrationPlan } from "../../shared";
 import { BudgetExceeded, BudgetTracker, CostCapExceeded, costCapFromEnv } from "../budget";
 import type { EventBus } from "../bus";
+import { cacheKey, cacheGet, cacheSet, purgeExpired } from "../cache";
 import type { ChatMessage, LLMClient, LLMUsage } from "../llm";
 import { LEAD_MODELS } from "../roster";
 import { sanitizeText } from "./sanitize";
@@ -137,12 +138,28 @@ export async function runDebate(
       emit(round, agentId, "SEARCHING", 0, { statusMessage: "Searching the web…" });
     }
     const startedAt = Date.now();
-    for await (const c of d.llm.streamChat({ messages, models, maxTokens, webSearch: args.webSearch })) {
-      if (c.type === "text") text += c.delta;
-      else if (c.type === "reasoning") reasoning += c.delta;
-      else if (c.type === "usage") usage = c.usage;
-      else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
-      else emit(round, agentId, "FALLBACK", 0, { primary: c.primary, modelUsed: c.modelUsed });
+    const key = args.webSearch
+      ? cacheKey({ tool: "web_search", maxResults: args.webSearch.maxResults, models, messages })
+      : undefined;
+    const hit = key ? cacheGet(d.db, key) : undefined;
+    let cached = false;
+    if (hit) {
+      cached = true;
+      text = hit.text;
+      reasoning = hit.reasoning ?? "";
+      citations.push(...hit.citations);
+    } else {
+      for await (const c of d.llm.streamChat({ messages, models, maxTokens, webSearch: args.webSearch })) {
+        if (c.type === "text") text += c.delta;
+        else if (c.type === "reasoning") reasoning += c.delta;
+        else if (c.type === "usage") usage = c.usage;
+        else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
+        else emit(round, agentId, "FALLBACK", 0, { primary: c.primary, modelUsed: c.modelUsed });
+      }
+      if (key && text) {
+        cacheSet(d.db, key, { text, reasoning: reasoning || undefined, citations, model: usage?.modelUsed });
+        purgeExpired(d.db);
+      }
     }
     const latencyMs = Date.now() - startedAt;
     const tokens = (usage?.promptTokens ?? 0) + (usage?.completionTokens ?? 0);
@@ -174,9 +191,10 @@ export async function runDebate(
       emit(round, agentId, "SPEAKING", tokens, {
         ...args.extraData,
         ...(args.webSearch ? { citations } : {}),
+        ...(cached ? { cached: true } : {}),
         message: text,
         costUsd,
-        model: usage?.modelUsed ?? models[0],
+        model: usage?.modelUsed ?? (cached ? hit?.model : undefined) ?? models[0],
         budget: snapshot(),
       });
     }

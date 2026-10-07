@@ -203,7 +203,7 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 
 ### Phase 4: Security, Caching & Polish
 
-- [ ] Implement Redis semantic/tool caching.
+- [x] Implement tool caching (SQLite exact-match cache; semantic cache not implemented).
 - [x] Apply prompt injection sanitization across inter-agent communications.
 - [ ] Add sound effects (8-bit text audio, battle chimes) and transcript export features.
 
@@ -233,3 +233,5 @@ Then open `http://<host-vpn-ip>:3000` on your phone and log in with `APP_PASSWOR
 2. **Standardized Event Schema**: All backend agent actions MUST emit uniform event types (`THINKING`, `SEARCHING`, `SPEAKING`, `PAUSED`, `DONE`, `ERROR`).
 3. **Graceful Fallbacks**: Always provide fallbacks for model timeouts or API rate limits so the multi-agent discussion completes uninterrupted.
 4. **Mobile First UI Resilience**: Canvas/game displays must gracefully resize into compact status bars on narrower viewports.
+
+> Note: semantic (embedding-based) caching is out of scope; only exact-match caching of web-search-backed calls is implemented (`TOOL_CACHE_ENABLED`, `TOOL_CACHE_TTL_HOURS`).
