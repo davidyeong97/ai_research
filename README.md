@@ -215,9 +215,12 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 ```bash
 npm ci
 cp .env.example .env.local     # then set APP_PASSWORD and OPENROUTER_API_KEY
+npm run db:migrate             # creates/updates the SQLite DB at DATABASE_PATH
 npm run build
 npm run start:lan              # same as: next start -H 0.0.0.0
 ```
+
+Required env vars: `APP_PASSWORD` (shared login password; the app refuses to serve without it) and `OPENROUTER_API_KEY` (server-side only). Use `npm start` instead of `start:lan` to listen on localhost only.
 
 Then open `http://<host-vpn-ip>:3000` on your phone and log in with `APP_PASSWORD`.
 
