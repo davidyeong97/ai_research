@@ -76,23 +76,24 @@ describe("runDebate", () => {
     const llm = new MockLLMClient(() => `msg${++n}`);
     const { events, rows } = await run(makePlan(3), llm);
     const speaking = events.filter((e) => e.action === "SPEAKING" && e.agentId !== "lead");
-    expect(speaking.map((e) => e.round)).toEqual([1, 1, 2, 2, 3, 3]);
-    expect(rows.map((r) => r.round)).toEqual([1, 1, 2, 2, 3, 3, 3, 3]);
+    expect(speaking.map((e) => e.round)).toEqual([1, 1, 1, 2, 2, 3, 3]);
+    expect(rows.map((r) => r.round)).toEqual([1, 1, 1, 2, 2, 3, 3, 3, 3]);
     expect(events.map((e) => e.id)).toEqual(events.map((_, i) => i + 1));
     // Round 1 prompt has no peers; round 2 wizard sees scout's round-1 message (msg2).
     expect(llm.calls[0].messages[1].content).toBe("Q?");
-    const r2wizard = llm.calls[2].messages[1].content;
+    const r2wizard = llm.calls[3].messages[1].content;
     expect(r2wizard).toContain("msg2");
     expect(r2wizard).toMatch(/Your previous position:\n<peer_message[^>]*>\nmsg1\n<\/peer_message>/);
+    expect(r2wizard).toContain("msg3"); // fact-check verdict
     // Call 4 is the lead's summary; round 3 scout sees wizard round-2 message (msg3), not round-1's (msg1).
-    const r3scout = llm.calls[6].messages[1].content;
-    expect(r3scout).toContain("msg3");
+    const r3scout = llm.calls[7].messages[1].content;
+    expect(r3scout).toContain("msg4");
     expect(r3scout).not.toContain("msg1\n");
     // Synthesis uses lead models and final-round positions.
-    expect(llm.calls[7].models).toEqual(LEAD_MODELS);
-    expect(llm.calls[7].messages[1].content).toContain("msg6");
-    expect(llm.calls[7].messages[1].content).toContain("msg7");
-    expect(events.at(-1)!.data.finalAnswer).toBe("msg8");
+    expect(llm.calls[8].models).toEqual(LEAD_MODELS);
+    expect(llm.calls[8].messages[1].content).toContain("msg7");
+    expect(llm.calls[8].messages[1].content).toContain("msg8");
+    expect(events.at(-1)!.data.finalAnswer).toBe("msg9");
   });
 
   it("summarizes before round 3+: prompts get summary + previous round only", async () => {
@@ -137,9 +138,9 @@ describe("runDebate", () => {
       usage: { promptTokens: 10, completionTokens: 10 },
     });
     const { events, session } = await run(makePlan(3), llm);
-    // 2 agents*2 rounds + summary + 2 round-3 agents + synthesis = 8 calls * 20
-    expect(events.at(-1)!.data.totalTokens).toBe(160);
-    expect(session.totalTokens).toBe(160);
+    // 2 agents*2 rounds + fact-check + summary + 2 round-3 agents + synthesis = 9 calls * 20
+    expect(events.at(-1)!.data.totalTokens).toBe(180);
+    expect(session.totalTokens).toBe(180);
   });
 
   it("emits FALLBACK when a fallback model serves the call", async () => {
@@ -176,11 +177,12 @@ describe("runDebate", () => {
     expect(seen).toEqual([
       "1:wizard-1:agent",
       "1:scout-1:agent",
+      "1:scout-1:factcheck",
       "2:wizard-1:agent",
       "2:scout-1:agent",
       "2:lead:synthesis",
     ]);
-    expect(llm.calls[3].messages[0].content).toBe("custom r2 scout-1");
+    expect(llm.calls[4].messages[0].content).toBe("custom r2 scout-1");
   });
 });
 
@@ -204,9 +206,9 @@ describe("runDebate web search", () => {
     const llm = mk();
     const { events } = await run(searchPlan(2, 3), llm);
     const searching = events.filter((e) => e.action === "SEARCHING");
-    expect(searching.map((e) => e.round)).toEqual([1, 1]);
+    expect(searching.map((e) => e.round)).toEqual([1, 1, 1]);
     expect(searching[0].data).toMatchObject({ statusMessage: "Searching the web…" });
-    expect(llm.calls.filter((c) => c.webSearch)).toHaveLength(2);
+    expect(llm.calls.filter((c) => c.webSearch)).toHaveLength(3);
     expect(llm.calls[0].webSearch).toEqual({ maxResults: 3 });
     const sp = events.find((e) => e.action === "SPEAKING")!;
     expect(sp.data.citations).toEqual([{ url: "https://a.example/x", title: "A &lt;b&gt;" }]);
@@ -214,10 +216,49 @@ describe("runDebate web search", () => {
 
   it("searches every round for complexity 5, and not without the tool", async () => {
     const { events } = await run(searchPlan(2, 5), mk());
-    expect(events.filter((e) => e.action === "SEARCHING")).toHaveLength(4);
+    expect(events.filter((e) => e.action === "SEARCHING")).toHaveLength(5);
     const llm = mk();
     const r = await run(makePlan(1), llm);
     expect(r.events.some((e) => e.action === "SEARCHING")).toBe(false);
     expect(llm.calls.some((c) => c.webSearch)).toBe(false);
+  });
+});
+
+describe("runDebate fact-check", () => {
+  it("emits FACT_CHECKING, records budget, persists, and feeds verdict to round 2", async () => {
+    const llm = new MockLLMClient((p) =>
+      p.messages[0].content.includes("fact-checker") ? "VERDICT-XYZ" : "claim",
+    );
+    const { events, rows } = await run(makePlan(2), llm);
+    const idx = events.findIndex((e) => e.action === "FACT_CHECKING");
+    expect(idx).toBeGreaterThan(-1);
+    const fc = events[idx];
+    expect(fc).toMatchObject({ agentId: "scout-1", round: 1 });
+    expect(fc.data.statusMessage).toEqual(expect.any(String));
+    const result = events[idx + 1];
+    expect(result).toMatchObject({ action: "SPEAKING", agentId: "scout-1" });
+    expect(result.data).toMatchObject({ factCheck: true, message: "VERDICT-XYZ" });
+    expect(result.data.budget).toMatchObject({ used: expect.any(Number) });
+    expect((result.data.budget as { used: number }).used).toBeGreaterThan(0);
+    expect(rows.filter((r) => r.actionType === "FACT_CHECK")).toHaveLength(1);
+    const fcCall = llm.calls[2];
+    expect(fcCall.messages[1].content).toContain('<peer_message agent="wizard-1"');
+    expect(fcCall.messages[1].content).not.toContain('agent="scout-1"');
+    const r2 = llm.calls[3].messages[1].content;
+    expect(r2).toMatch(/<fact_check>\nVERDICT-XYZ\n<\/fact_check>/);
+  });
+
+  it("is skipped for 1-round plans below complexity 4", async () => {
+    const llm = new MockLLMClient("x");
+    const { events } = await run(makePlan(1), llm);
+    expect(events.some((e) => e.action === "FACT_CHECKING")).toBe(false);
+    expect(llm.calls).toHaveLength(3);
+  });
+
+  it("runs for 1-round plans at complexity >= 4", async () => {
+    const plan = makePlan(1);
+    plan.complexityScore = 4;
+    const { events } = await run(plan, new MockLLMClient("x"));
+    expect(events.some((e) => e.action === "FACT_CHECKING")).toBe(true);
   });
 });

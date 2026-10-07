@@ -256,7 +256,8 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
       return next;
     }
     case "SPEAKING": {
-      const message = str(d.message) ?? str(d.text) ?? "";
+      const rawMessage = str(d.message) ?? str(d.text) ?? "";
+      const message = d.factCheck === true ? `Fact-check 🔍: ${rawMessage}` : rawMessage;
       if (e.agentId === "user") {
         next.transcript = [...state.transcript, entry("director", message)];
         return next;

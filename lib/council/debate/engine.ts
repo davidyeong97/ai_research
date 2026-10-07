@@ -9,6 +9,7 @@ import { LEAD_MODELS } from "../roster";
 import { sanitizeText } from "./sanitize";
 import {
   buildAgentPrompt,
+  buildFactCheckPrompt,
   buildSynthesisPrompt,
   type DebateAgent,
   buildSummaryPrompt,
@@ -29,7 +30,7 @@ export interface CheckpointContext {
   round: number;
   /** Agent about to speak ("lead" before synthesis). */
   agentId: string;
-  phase: "agent" | "synthesis" | "summary";
+  phase: "agent" | "synthesis" | "summary" | "factcheck";
   history: readonly HistoryEntry[];
 }
 
@@ -94,6 +95,7 @@ export async function runDebate(
   let totalCostUsd = 0;
   let currentRound = 1;
   let summary: string | undefined;
+  let factCheck: string | undefined;
 
   const emit = (
     round: number,
@@ -119,7 +121,7 @@ export async function runDebate(
     models: string[];
     messages: ChatMessage[];
     maxTokens: number;
-    rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY";
+    rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY" | "FACT_CHECK";
     extraData?: Record<string, unknown>;
     webSearch?: { maxResults: number };
   }): Promise<string> {
@@ -220,6 +222,7 @@ export async function runDebate(
           history,
           agents,
           summary,
+          factCheck,
         });
         const models = [agent.model, ...agent.fallbackModels].filter((m): m is string => !!m);
         const text = await turn({
@@ -236,6 +239,30 @@ export async function runDebate(
         roundEntries.push({ round, agentId: agent.id, role: agent.role, text });
       }
       history.push(...roundEntries);
+
+      if (round === 1 && (maxRounds >= 2 || plan.complexityScore >= 4) && agents.length > 0) {
+        const checker = agents.find((a) => a.role === "scout" || a.avatar === "scout") ?? agents[0];
+        await checkpoint({ questId, round, agentId: checker.id, phase: "factcheck", history });
+        emit(round, checker.id, "FACT_CHECKING", 0, { statusMessage: "Fact-checking peers' claims…" });
+        const claims = roundEntries.filter((e) => e.agentId !== checker.id);
+        const verdict = await turn({
+          round,
+          agentId: checker.id,
+          models: [checker.model, ...checker.fallbackModels].filter((m): m is string => !!m),
+          messages: buildFactCheckPrompt({
+            query,
+            agent: checker,
+            round,
+            entries: claims,
+            searchEnabled,
+          }),
+          maxTokens: agentMax,
+          rowAction: "FACT_CHECK",
+          extraData: { factCheck: true },
+          webSearch: searchEnabled ? { maxResults: webSearchMaxResults() } : undefined,
+        });
+        factCheck = verdict.trim() || undefined;
+      }
     }
 
     // Lead synthesis.
@@ -246,7 +273,7 @@ export async function runDebate(
       round: maxRounds,
       agentId: "lead",
       models: LEAD_MODELS,
-      messages: buildSynthesis({ query, maxRounds, history, agents }),
+      messages: buildSynthesis({ query, maxRounds, history, agents, factCheck }),
       maxTokens: synthMax,
       rowAction: "CONSENSUS",
     });
