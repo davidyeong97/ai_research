@@ -205,7 +205,8 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 
 - [ ] Implement Redis semantic/tool caching.
 - [x] Apply prompt injection sanitization across inter-agent communications.
-- [ ] Add sound effects (8-bit text audio, battle chimes) and transcript export features.
+- [ ] Add sound effects (8-bit text audio, battle chimes).
+- [x] Add transcript export (Markdown and JSON download).
 
 ---
 
