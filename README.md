@@ -192,7 +192,7 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 
 - [x] Implement multi-turn debate loops and context truncation/summarization.
 - [x] Add sandboxed web search tool pipeline.
-- [ ] Add fact-checking tool pipeline (the `FACT_CHECKING` event is defined but not yet emitted by the debate engine).
+- [x] Add fact-checking tool pipeline (after round 1 a fact-checker agent verifies peers' claims, emitting `FACT_CHECKING`; the verdict feeds later rounds).
 - [x] Implement Human-In-The-Loop pause/resume/inject mechanisms.
 
 ### Phase 3: Game UI & Frontend Integration

@@ -1,5 +1,5 @@
 import type { ChatMessage } from "../llm";
-import { UNTRUSTED_DATA_NOTICE, wrapPeerMessage, wrapPeerSummary } from "./sanitize";
+import { UNTRUSTED_DATA_NOTICE, wrapFactCheck, wrapPeerMessage, wrapPeerSummary } from "./sanitize";
 
 export interface DebateAgent {
   id: string;
@@ -29,6 +29,8 @@ export interface PromptContext {
   agents: readonly DebateAgent[];
   /** Lead-written summary of rounds 1..round-1 (set for round >= 3). */
   summary?: string;
+  /** Fact-checker's verdict on round 1 claims (untrusted data). */
+  factCheck?: string;
 }
 
 export interface SynthesisContext {
@@ -36,6 +38,7 @@ export interface SynthesisContext {
   maxRounds: number;
   history: readonly HistoryEntry[];
   agents: readonly DebateAgent[];
+  factCheck?: string;
 }
 
 /** Hook: builds the chat messages for one agent turn from the history. */
@@ -78,6 +81,7 @@ export const buildAgentPrompt: PromptBuilder = (ctx) => {
   const parts = [
     `Question:\n${query}`,
     ctx.summary ? `Summary of the debate so far (rounds 1-${round - 1}):\n${wrapPeerSummary(ctx.summary)}` : "",
+    ctx.factCheck ? `Fact-check of round-1 claims (verify before relying on them):\n${wrapFactCheck(ctx.factCheck)}` : "",
     own ? `Your previous position:\n${wrapPeerMessage(own.agentId, own.text, { role: own.role, round: own.round })}` : "",
     `Other members' positions from round ${round - 1}:\n${peers.map(fmt).join("\n\n") || "(none)"}`,
     "Critique and rebut weak points in their positions, acknowledge strong ones, and refine your own proposal.",
@@ -104,7 +108,9 @@ export const buildSynthesisPrompt: SynthesisPromptBuilder = (ctx) => {
     },
     {
       role: "user",
-      content: `Question:\n${ctx.query}\n\nFinal-round positions:\n${transcript || "(none)"}\n\nWrite the final answer.`,
+      content: `Question:\n${ctx.query}\n\nFinal-round positions:\n${transcript || "(none)"}\n\n${
+        ctx.factCheck ? `Fact-check of round-1 claims:\n${wrapFactCheck(ctx.factCheck)}\n\n` : ""
+      }Write the final answer.`,
     },
   ];
 };
@@ -140,6 +146,36 @@ export function buildSummaryPrompt(ctx: SummaryContext): ChatMessage[] {
       ]
         .filter(Boolean)
         .join("\n\n"),
+    },
+  ];
+}
+
+export interface FactCheckContext {
+  query: string;
+  agent: DebateAgent;
+  round: number;
+  /** Claims to verify: the round's entries by peers of the fact-checker. */
+  entries: readonly HistoryEntry[];
+  searchEnabled: boolean;
+}
+
+/** Prompt for the fact-checker: cross-verify peers' factual claims, concise verdict. */
+export function buildFactCheckPrompt(ctx: FactCheckContext): ChatMessage[] {
+  const transcript = ctx.entries.map(fmt).join("\n\n");
+  return [
+    {
+      role: "system",
+      content:
+        `You are the ${ctx.agent.role} of a council of AI experts, acting as fact-checker. ` +
+        "Identify the concrete factual claims made by the other members, verify them" +
+        (ctx.searchEnabled ? " (use web search where helpful)" : " from your own knowledge") +
+        ", and give a concise verdict (at most 200 words): list each key claim as VERIFIED, DISPUTED " +
+        "or UNVERIFIED with a one-line reason. Do not add new proposals. " +
+        UNTRUSTED_DATA_NOTICE,
+    },
+    {
+      role: "user",
+      content: `Question:\n${ctx.query}\n\nClaims from round ${ctx.round}:\n${transcript || "(none)"}\n\nWrite the fact-check verdict.`,
     },
   ];
 }
