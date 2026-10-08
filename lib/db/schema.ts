@@ -53,3 +53,19 @@ export const toolCache = sqliteTable("tool_cache", {
   createdAt: integer("created_at").notNull(),
   expiresAt: integer("expires_at").notNull(),
 });
+
+export const attachments = sqliteTable(
+  "attachments",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").references(() => sessions.id),
+    filename: text("filename").notNull(),
+    mime: text("mime").notNull(),
+    kind: text("kind").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    storagePath: text("storage_path").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [index("attachments_session_idx").on(t.sessionId)],
+);
