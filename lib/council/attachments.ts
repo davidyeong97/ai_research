@@ -188,3 +188,16 @@ export async function purgeStaleUploads(db: DB = getDb(), now: number = Date.now
   );
   return stale.length;
 }
+
+/** Resolve attachment ids for a new quest: max 5, all must exist and be unlinked. */
+export function resolveUnlinkedAttachments(ids: string[], db: DB = getDb()): AttachmentRecord[] {
+  const unique = [...new Set(ids)];
+  if (unique.length > MAX_ATTACHMENTS) {
+    throw new UploadError(400, `Too many attachments (max ${MAX_ATTACHMENTS})`);
+  }
+  if (unique.length === 0) return [];
+  const rows = db.select().from(schema.attachments).where(inArray(schema.attachments.id, unique)).all();
+  if (rows.length !== unique.length) throw new UploadError(404, "Unknown attachment id");
+  if (rows.some((r) => r.sessionId)) throw new UploadError(409, "Attachment already used by another quest");
+  return unique.map((id) => rows.find((r) => r.id === id)!);
+}

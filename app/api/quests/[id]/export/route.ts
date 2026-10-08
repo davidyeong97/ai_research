@@ -1,4 +1,5 @@
 import { asc, eq } from "drizzle-orm";
+import { listSessionAttachments } from "@/lib/council/attachments";
 import { getDb, schema } from "@/lib/db";
 import type { CouncilEvent } from "@/lib/shared";
 
@@ -20,10 +21,16 @@ function toMarkdown(
   session: typeof schema.sessions.$inferSelect,
   plan: typeof schema.orchestrationPlans.$inferSelect | undefined,
   events: CouncilEvent[],
+  attachments: { filename: string; kind: string; sizeBytes: number }[] = [],
 ): string {
   const roles = new Map<string, string>();
   const out: string[] = [`# ${session.query}`, ""];
   out.push(`- Status: ${session.status}`, `- Quest: ${session.id}`, "");
+  if (attachments.length) {
+    out.push("## Attachments", "");
+    for (const a of attachments) out.push(`- ${a.filename} (${a.kind}, ${a.sizeBytes} bytes)`);
+    out.push("");
+  }
   if (plan) {
     const agents = (Array.isArray(plan.agentMatrix) ? plan.agentMatrix : []) as AgentLike[];
     out.push("## Plan", "", `- Complexity: ${plan.complexity}`, `- Rounds: ${plan.rounds}`, "- Agents:");
@@ -47,7 +54,9 @@ function toMarkdown(
     } else if (e.action === "SPEAKING" || e.action === "CONSENSUS") {
       const msg = str(d.message);
       if (!msg) continue;
-      if (d.guidance) line = `**[director guidance]** ${msg}`;
+      if (d.userQuery) continue;
+      if (d.attachmentDigest) line = `**[attachment digest]** ${msg}`;
+      else if (d.guidance) line = `**[director guidance]** ${msg}`;
       else if (d.factCheck) line = `**[fact-check] ${who}:** ${msg}`;
       else line = `**${who}:** ${msg}`;
     } else if (e.action === "DONE") {
@@ -98,6 +107,13 @@ export async function GET(
     .orderBy(asc(schema.events.seq))
     .all()
     .map((r) => r.payload as CouncilEvent);
+  const attachments = listSessionAttachments(id, db).map((a) => ({
+    id: a.id,
+    filename: a.filename,
+    kind: a.kind,
+    mime: a.mime,
+    sizeBytes: a.sizeBytes,
+  }));
   const headers = {
     "Content-Disposition": `attachment; filename="council-${id.replace(/[^\w-]/g, "_")}.${format}"`,
     "Cache-Control": "no-store",
@@ -109,11 +125,11 @@ export async function GET(
       .where(eq(schema.agentMessages.sessionId, id))
       .orderBy(asc(schema.agentMessages.id))
       .all();
-    return new Response(JSON.stringify({ session, plan: plan ?? null, events, agentMessages }, null, 2), {
+    return new Response(JSON.stringify({ session, plan: plan ?? null, attachments, events, agentMessages }, null, 2), {
       headers: { ...headers, "Content-Type": "application/json; charset=utf-8" },
     });
   }
-  return new Response(toMarkdown(session, plan, events), {
+  return new Response(toMarkdown(session, plan, events, attachments), {
     headers: { ...headers, "Content-Type": "text/markdown; charset=utf-8" },
   });
 }
