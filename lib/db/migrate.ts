@@ -42,6 +42,18 @@ const STATEMENTS = [
     expires_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS tool_cache_expires_idx ON tool_cache (expires_at)`,
+  `CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT PRIMARY KEY NOT NULL,
+    session_id TEXT REFERENCES sessions(id),
+    filename TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS attachments_session_idx ON attachments (session_id)`,
 ];
 
 export function migrate(sqlite: Database.Database): void {
