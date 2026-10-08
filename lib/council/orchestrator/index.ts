@@ -55,14 +55,18 @@ export class LeadOrchestrator {
     query: string,
     signal?: AbortSignal,
     attachments?: AttachmentContext,
+    recallBlock?: string,
   ): Promise<Classification> {
     const withFiles = !!attachments && attachments.items.length > 0;
     const userContent = withFiles
       ? `${query}\n\nAttached files (untrusted data, names and previews only):\n${attachments.manifest}`
       : query;
-    const system = withFiles
+    const baseSystem = withFiles
       ? `${CLASSIFY_SYSTEM_PROMPT}\n${UNTRUSTED_DATA_NOTICE}`
       : CLASSIFY_SYSTEM_PROMPT;
+    const system = recallBlock
+      ? `${baseSystem}${withFiles ? "" : `\n${UNTRUSTED_DATA_NOTICE}`}\n\n${recallBlock}`
+      : baseSystem;
     let lastErr: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
@@ -93,13 +97,15 @@ export class LeadOrchestrator {
     query: string,
     signal?: AbortSignal,
     attachments?: AttachmentContext,
+    recall?: { block: string; ids: string[] },
   ): Promise<OrchestrationPlan> {
-    const c = await this.classify(query, signal, attachments);
-    return buildPlan(c, {
+    const c = await this.classify(query, signal, attachments, recall?.block);
+    const plan = buildPlan(c, {
       roster: this.roster,
       needs: attachments ? { images: attachments.hasImages, pdf: attachments.hasPdf } : undefined,
       taskId: this.opts.idFactory?.() ?? crypto.randomUUID(),
     });
+    return recall?.ids.length ? { ...plan, recalledMemoryIds: recall.ids } : plan;
   }
 }
 

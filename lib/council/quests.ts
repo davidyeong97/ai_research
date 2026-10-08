@@ -8,6 +8,8 @@ import { buildAgentPrompt } from "./debate/prompts";
 import { costCapFromEnv } from "./budget";
 import { OpenRouterClient, type LLMClient } from "./llm";
 import { extractMemories } from "./memory/extract";
+import { prepareRecall } from "./memory/recall";
+import { touchUsed } from "./memory/store";
 import { LeadOrchestrator } from "./orchestrator";
 import { UploadError, linkToSession, resolveUnlinkedAttachments } from "./attachments";
 import { buildAttachmentContext, type AttachmentMeta } from "./debate/attachment-context";
@@ -67,10 +69,12 @@ export async function createQuest(
   }
   const attachmentCtx = records.length ? buildAttachmentContext(records, db) : undefined;
   const attachments = attachmentCtx?.items ?? [];
+  const recall = await prepareRecall(query, { db, llm });
   const plan = await new LeadOrchestrator({ llm, idFactory: () => questId }).plan(
     query,
     undefined,
     attachmentCtx,
+    recall ? { block: recall.block, ids: recall.ids } : undefined,
   );
 
   const gated = !!plan.requiresApproval;
@@ -107,10 +111,33 @@ export async function createQuest(
     });
   }
 
+  if (recall) {
+    try {
+      touchUsed(recall.ids, { db });
+    } catch (err) {
+      console.warn("[memory] touchUsed failed:", String(err));
+    }
+    bus.publish({
+      questId,
+      round: 0,
+      agentId: "lead",
+      action: "RECALL",
+      tokensUsed: 0,
+      data: {
+        count: recall.ids.length,
+        ids: recall.ids,
+        chars: recall.chars,
+        preview: recall.preview,
+        block: recall.block,
+      },
+    });
+  }
+
   const control = createControl(questId, deps.controlTimeoutMs);
   const run = () =>
     runDebate({ db, bus, llm }, questId, query, plan, {
       attachments: attachmentCtx,
+      recalled: recall?.block,
       checkpoint: control.checkpointFor(bus),
       buildPrompt: control.wrapPromptBuilder(buildAgentPrompt),
     });
