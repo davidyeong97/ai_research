@@ -6,7 +6,7 @@ import { sanitizeText } from "../debate/sanitize";
 import { collectChat, type LLMClient } from "../llm";
 import { memoryEnabled, memoryModel } from "./config";
 import { noteExtraction } from "./consolidate";
-import { insertMemory, MEMORY_KINDS } from "./store";
+import { insertMemory } from "./store";
 
 /**
  * Post-quest memory extraction. Runs only after a quest finished with DONE,
@@ -26,7 +26,7 @@ export const extractMaxCostUsd = (): number => {
 };
 
 const ItemSchema = z.object({
-  kind: z.enum(MEMORY_KINDS),
+  kind: z.enum(["fact", "preference", "summary"]),
   content: z.string().trim().min(1),
   confidence: z.number().min(0).max(1).optional(),
 });
