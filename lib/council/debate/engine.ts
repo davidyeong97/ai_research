@@ -51,6 +51,8 @@ export interface DebateOptions {
   digestMaxTokens?: number;
   /** Quest attachments (untrusted); enables the digest step and media/text prompt inputs. */
   attachments?: AttachmentContext;
+  /** Fenced long-term memory block injected into every agent's round-1 prompt only. */
+  recalled?: string;
 }
 
 const AGENT_MAX_TOKENS = 400;
@@ -342,6 +344,7 @@ export async function runDebate(
           agents,
           summary,
           factCheck,
+          ...(round === 1 && opts.recalled ? { recalled: opts.recalled } : {}),
           attachments: att
             ? { textBlock: att.textBlock, digest, media: mediaFor(agent, round) }
             : undefined,
