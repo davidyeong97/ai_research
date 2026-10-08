@@ -1,8 +1,29 @@
 export type ChatRole = "system" | "user" | "assistant";
 
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; data: Uint8Array | string; mediaType: string }
+  | { type: "file"; data: Uint8Array | string; mediaType: "application/pdf"; filename: string };
+
+export type MessageContent = string | ContentPart[];
+
 export interface ChatMessage {
   role: ChatRole;
-  content: string;
+  /** Plain string (text-only) or multimodal parts. `data` strings are base64. */
+  content: MessageContent;
+}
+
+/** Concatenated text of a message content (media parts are omitted). */
+export function textOf(content: MessageContent): string {
+  if (typeof content === "string") return content;
+  return content.map((p) => (p.type === "text" ? p.text : "")).join("");
+}
+
+/** True when any message carries an image or file part. */
+export function hasMedia(messages: ChatMessage[]): boolean {
+  return messages.some(
+    (m) => typeof m.content !== "string" && m.content.some((p) => p.type !== "text"),
+  );
 }
 
 export type ReasoningOption =
@@ -38,8 +59,23 @@ export type LLMChunk =
   | { type: "fallback"; primary: string; modelUsed: string }
   | { type: "usage"; usage: LLMUsage };
 
+export interface EmbedParams {
+  texts: string[];
+  model: string;
+  signal?: AbortSignal;
+}
+
+export interface EmbedResult {
+  /** One vector per input text, same order. */
+  vectors: number[][];
+  tokens: number;
+  costUsd: number;
+}
+
 export interface LLMClient {
   streamChat(params: StreamChatParams): AsyncIterable<LLMChunk>;
+  /** Text embeddings (used by cross-quest memory). */
+  embed(params: EmbedParams): Promise<EmbedResult>;
 }
 
 /** Collects a full stream into text, reasoning and usage. */

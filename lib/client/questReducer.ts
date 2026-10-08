@@ -33,7 +33,14 @@ export interface InspectSelection {
   entryId?: number;
 }
 
-export type TranscriptKind = "message" | "status" | "final" | "error" | "director";
+export type TranscriptKind =
+  "message" | "status" | "final" | "error" | "director" | "quest" | "digest" | "memory";
+
+export interface AttachmentRef {
+  id: string;
+  filename: string;
+  kind: "image" | "pdf" | "text";
+}
 
 export interface PendingApproval {
   plan: {
@@ -44,6 +51,13 @@ export interface PendingApproval {
   };
   estimatedMaxTokens: number | null;
   estimatedMaxCostUsd: number | null;
+  attachments: AttachmentRef[];
+}
+
+export interface RecalledMemoryRef {
+  id: string;
+  kind?: string;
+  preview: string;
 }
 
 export interface TranscriptEntry {
@@ -60,6 +74,10 @@ export interface TranscriptEntry {
   model?: string;
   costUsd?: number;
   latencyMs?: number;
+  attachments?: AttachmentRef[];
+  /** Full injected (fenced) memory block, for kind "memory". */
+  block?: string;
+  memories?: RecalledMemoryRef[];
 }
 
 export type QuestPhase = "idle" | "running" | "done" | "error";
@@ -74,6 +92,8 @@ export interface QuestState {
   pendingApproval: PendingApproval | null;
   agents: AgentState[];
   transcript: TranscriptEntry[];
+  /** Memories recalled for this quest (from RECALL events). */
+  recalled: RecalledMemoryRef[];
   finalAnswer: string | null;
   lastEventId: number;
   /** Highest round seen across events (0 before any). */
@@ -96,6 +116,7 @@ export const initialQuestState: QuestState = {
   pendingApproval: null,
   agents: [],
   transcript: [],
+  recalled: [],
   finalAnswer: null,
   lastEventId: 0,
   currentRound: 0,
@@ -128,6 +149,17 @@ const num = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? v : undefined;
 const rec = (v: unknown): Record<string, unknown> | undefined =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+
+function parseAttachments(v: unknown): AttachmentRef[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((a): AttachmentRef[] => {
+    const r = rec(a);
+    const id = str(r?.id);
+    const kind = str(r?.kind);
+    if (!id || (kind !== "image" && kind !== "pdf" && kind !== "text")) return [];
+    return [{ id, filename: str(r?.filename) ?? id, kind }];
+  });
+}
 
 function parseCitations(v: unknown): Citation[] | undefined {
   if (!Array.isArray(v)) return undefined;
@@ -197,12 +229,40 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "FACT_CHECKING":
     case "CONSENSUS": {
       const status = str(d.statusMessage);
+      const action = e.action;
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({
         ...a,
-        status: e.action,
+        status: action,
         latestLine: status ?? a.latestLine,
       }));
       if (status) next.transcript = [...state.transcript, entry("status", status)];
+      return next;
+    }
+    case "RECALL": {
+      const count = num(d.count) ?? 0;
+      const previews = Array.isArray(d.preview)
+        ? d.preview.filter((p): p is string => typeof p === "string")
+        : str(d.preview)
+          ? [str(d.preview) as string]
+          : [];
+      const ids = Array.isArray(d.ids) ? d.ids.filter((x): x is string => typeof x === "string") : [];
+      const kinds = Array.isArray(d.kinds) ? d.kinds : [];
+      const memories: RecalledMemoryRef[] = previews.map((preview, i) => ({
+        id: ids[i] ?? `recalled-${e.id}-${i}`,
+        kind: str(kinds[i]),
+        preview,
+      }));
+      const joined = previews.join(" | ");
+      const short = joined.length > 140 ? `${joined.slice(0, 139)}…` : joined;
+      const text = `🧠 Council recalled ${count} ${count === 1 ? "memory" : "memories"}${short ? `: ${short}` : ""}`;
+      next.recalled = [...state.recalled, ...memories];
+      next.transcript = [
+        ...state.transcript,
+        { ...entry("memory", text), block: str(d.block), memories },
+      ];
+      if (state.agents.some((a) => a.id === e.agentId)) {
+        next.agents = patchAgent(state.agents, e.agentId, (a) => ({ ...a, status: "RECALL" }));
+      }
       return next;
     }
     case "PAUSED": {
@@ -224,6 +284,7 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
           },
           estimatedMaxTokens: num(d.estimatedMaxTokens) ?? null,
           estimatedMaxCostUsd: num(d.estimatedMaxCostUsd) ?? null,
+          attachments: parseAttachments(d.attachments),
         };
         return next;
       }
@@ -258,8 +319,25 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "SPEAKING": {
       const rawMessage = str(d.message) ?? str(d.text) ?? "";
       const message = d.factCheck === true ? `Fact-check 🔍: ${rawMessage}` : rawMessage;
+      if (e.agentId === "user" && d.userQuery === true) {
+        next.transcript = [
+          ...state.transcript,
+          { ...entry("quest", rawMessage), attachments: parseAttachments(d.attachments) },
+        ];
+        return next;
+      }
       if (e.agentId === "user") {
         next.transcript = [...state.transcript, entry("director", message)];
+        return next;
+      }
+      if (d.attachmentDigest === true) {
+        next.agents = patchAgent(state.agents, e.agentId, (a) => ({
+          ...a,
+          status: "SPEAKING",
+          tokensUsed: a.tokensUsed + e.tokensUsed,
+          costUsd: a.costUsd + (num(d.costUsd) ?? 0),
+        }));
+        next.transcript = [...state.transcript, entry("digest", rawMessage)];
         return next;
       }
       const budget = rec(d.budget);

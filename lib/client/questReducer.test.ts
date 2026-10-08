@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { initialQuestState, questReducer, type QuestState } from "./questReducer";
 import { MOCK_PLAN } from "@/components/mock-data";
-import type { CouncilEvent } from "@/lib/shared";
+import { CouncilEventSchema, type CouncilEvent } from "@/lib/shared";
 
 let seq = 0;
 const ev = (p: Partial<CouncilEvent> & Pick<CouncilEvent, "agentId" | "action">): CouncilEvent => ({
@@ -19,6 +19,43 @@ const started = () => {
   seq = 0;
   return questReducer(initialQuestState, { type: "start", questId: "q1", plan: MOCK_PLAN });
 };
+
+describe("questReducer RECALL", () => {
+  it("renders an expandable memory entry and tracks recalled memories", () => {
+    const s = run(
+      started(),
+      ev({
+        agentId: "lead",
+        action: "RECALL",
+        round: 0,
+        data: {
+          count: 2,
+          ids: ["a", "b"],
+          kinds: ["preference", "fact"],
+          preview: ["likes tea", "uses vim"],
+          block: "<long_term_memory>x</long_term_memory>",
+        },
+      }),
+    );
+    expect(s.transcript.at(-1)).toMatchObject({
+      kind: "memory",
+      action: "RECALL",
+      text: "🧠 Council recalled 2 memories: likes tea | uses vim",
+      block: "<long_term_memory>x</long_term_memory>",
+    });
+    expect(s.recalled).toEqual([
+      { id: "a", kind: "preference", preview: "likes tea" },
+      { id: "b", kind: "fact", preview: "uses vim" },
+    ]);
+    expect(s.phase).toBe("running");
+  });
+
+  it("tolerates missing data", () => {
+    const s = run(started(), ev({ agentId: "lead", action: "RECALL", round: 0 }));
+    expect(s.transcript.at(-1)?.text).toBe("🧠 Council recalled 0 memories");
+    expect(s.recalled).toEqual([]);
+  });
+});
 
 describe("questReducer", () => {
   it("start builds agents from the plan", () => {
@@ -75,7 +112,12 @@ describe("questReducer", () => {
         data: {
           message: "Hi",
           thought: "because",
-          citations: [{ url: "https://a.com/x", title: "A" }, { url: 5 }, "bad", { url: "https://b.org" }],
+          citations: [
+            { url: "https://a.com/x", title: "A" },
+            { url: 5 },
+            "bad",
+            { url: "https://b.org" },
+          ],
           model: "m/x",
           costUsd: 0.002,
           latencyMs: 1200,
@@ -148,5 +190,57 @@ describe("questReducer", () => {
     expect(s.phase).toBe("error");
     expect(s.error).toBe("budget exceeded");
     expect(s.transcript.at(-1)?.kind).toBe("error");
+  });
+});
+
+describe("attachments", () => {
+  const mk = (id: number, agentId: string, action: string, data: Record<string, unknown>) =>
+    CouncilEventSchema.parse({
+      id,
+      questId: "q1",
+      timestamp: "2026-10-06T10:00:00.000Z",
+      round: 1,
+      agentId,
+      action,
+      tokensUsed: 0,
+      data,
+    });
+  const started = () =>
+    questReducer(initialQuestState, { type: "start", questId: "q1", plan: MOCK_PLAN });
+
+  it("renders the user's quest entry with attachments", () => {
+    const s = questReducer(started(), {
+      type: "event",
+      event: mk(1, "user", "SPEAKING", {
+        userQuery: true,
+        message: "Look",
+        attachments: [{ id: "a1", filename: "x.png", kind: "image" }, { id: 5 }],
+      }),
+    });
+    expect(s.transcript[0]).toMatchObject({
+      kind: "quest",
+      text: "Look",
+      attachments: [{ id: "a1", filename: "x.png", kind: "image" }],
+    });
+  });
+
+  it("renders the attachment digest as a distinct entry", () => {
+    const s = questReducer(started(), {
+      type: "event",
+      event: mk(2, "lead", "SPEAKING", { attachmentDigest: true, message: "A cat photo" }),
+    });
+    expect(s.transcript[0]).toMatchObject({ kind: "digest", text: "A cat photo" });
+  });
+
+  it("carries attachments into the pending approval", () => {
+    const s = questReducer(started(), {
+      type: "event",
+      event: mk(3, "lead", "PAUSED", {
+        awaitingApproval: true,
+        plan: { agents: [], tools: [] },
+        attachments: [{ id: "a1", filename: "x.pdf", kind: "pdf" }],
+      }),
+    });
+    expect(s.pendingApproval?.attachments).toEqual([{ id: "a1", filename: "x.pdf", kind: "pdf" }]);
   });
 });

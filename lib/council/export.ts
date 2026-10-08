@@ -1,4 +1,5 @@
 import { asc, eq } from "drizzle-orm";
+import { listSessionAttachments } from "@/lib/council/attachments";
 import { schema, type DB } from "@/lib/db";
 import type { CouncilEvent } from "@/lib/shared";
 
@@ -17,16 +18,37 @@ export function toMarkdown(
   session: typeof schema.sessions.$inferSelect,
   plan: typeof schema.orchestrationPlans.$inferSelect | undefined,
   events: CouncilEvent[],
+  attachments: { filename: string; kind: string; sizeBytes: number }[] = [],
 ): string {
   const roles = new Map<string, string>();
   const out: string[] = [`# ${session.query}`, ""];
   out.push(`- Status: ${session.status}`, `- Quest: ${session.id}`, "");
+  if (attachments.length) {
+    out.push("## Attachments", "");
+    for (const a of attachments) out.push(`- ${a.filename} (${a.kind}, ${a.sizeBytes} bytes)`);
+    out.push("");
+  }
   if (plan) {
     const agents = (Array.isArray(plan.agentMatrix) ? plan.agentMatrix : []) as AgentLike[];
     out.push("## Plan", "", `- Complexity: ${plan.complexity}`, `- Rounds: ${plan.rounds}`, "- Agents:");
     for (const a of agents) {
       if (a.id) roles.set(a.id, a.role ?? a.id);
       out.push(`  - ${a.role ?? a.id ?? "agent"} (${a.id ?? "?"}): ${a.model ?? "default model"}`);
+    }
+    out.push("");
+  }
+  const recalled = events.filter((e) => e.action === "RECALL");
+  if (recalled.length) {
+    out.push("## Recalled memory", "");
+    for (const e of recalled) {
+      const d = (e.data ?? {}) as Record<string, unknown>;
+      const ids = Array.isArray(d.ids) ? d.ids : [];
+      const kinds = Array.isArray(d.kinds) ? d.kinds : [];
+      const previews = Array.isArray(d.preview) ? d.preview : [];
+      previews.forEach((p, i) => {
+        const text = String(p).replace(/\s+/g, " ").trim();
+        out.push(`- [${str(kinds[i]) ?? "memory"}] ${text}${str(ids[i]) ? ` (${ids[i]})` : ""}`);
+      });
     }
     out.push("");
   }
@@ -44,7 +66,9 @@ export function toMarkdown(
     } else if (e.action === "SPEAKING" || e.action === "CONSENSUS") {
       const msg = str(d.message);
       if (!msg) continue;
-      if (d.guidance) line = `**[director guidance]** ${msg}`;
+      if (d.userQuery) continue;
+      if (d.attachmentDigest) line = `**[attachment digest]** ${msg}`;
+      else if (d.guidance) line = `**[director guidance]** ${msg}`;
       else if (d.factCheck) line = `**[fact-check] ${who}:** ${msg}`;
       else line = `**${who}:** ${msg}`;
     } else if (e.action === "DONE") {
@@ -87,6 +111,13 @@ export function buildExport(db: DB, id: string, format: "md" | "json"): string |
     .orderBy(asc(schema.events.seq))
     .all()
     .map((r) => r.payload as CouncilEvent);
+  const attachments = listSessionAttachments(id, db).map((a) => ({
+    id: a.id,
+    filename: a.filename,
+    kind: a.kind,
+    mime: a.mime,
+    sizeBytes: a.sizeBytes,
+  }));
   if (format === "json") {
     const agentMessages = db
       .select()
@@ -94,7 +125,21 @@ export function buildExport(db: DB, id: string, format: "md" | "json"): string |
       .where(eq(schema.agentMessages.sessionId, id))
       .orderBy(asc(schema.agentMessages.id))
       .all();
-    return JSON.stringify({ session, plan: plan ?? null, events, agentMessages }, null, 2);
+    const recalledMemoryIds = [
+      ...new Set(
+        events
+          .filter((e) => e.action === "RECALL")
+          .flatMap((e) => {
+            const ids = (e.data as Record<string, unknown> | undefined)?.ids;
+            return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+          }),
+      ),
+    ];
+    return JSON.stringify(
+      { session, plan: plan ?? null, attachments, recalledMemoryIds, events, agentMessages },
+      null,
+      2,
+    );
   }
-  return toMarkdown(session, plan, events);
+  return toMarkdown(session, plan, events, attachments);
 }

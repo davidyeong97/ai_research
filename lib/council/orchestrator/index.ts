@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { defaultBudgetCap } from "../budget";
-import { collectChat, type LLMClient } from "../llm";
+import { collectChat, supportsPdf, supportsVision, type LLMClient } from "../llm";
+import type { AttachmentContext } from "../debate/attachment-context";
+import { UNTRUSTED_DATA_NOTICE } from "../debate/sanitize";
 import {
   DEFAULT_ROSTER,
   DOMAINS,
@@ -49,15 +51,30 @@ export class LeadOrchestrator {
     this.roster = opts.roster ?? DEFAULT_ROSTER;
   }
 
-  async classify(query: string, signal?: AbortSignal): Promise<Classification> {
+  async classify(
+    query: string,
+    signal?: AbortSignal,
+    attachments?: AttachmentContext,
+    recallBlock?: string,
+  ): Promise<Classification> {
+    const withFiles = !!attachments && attachments.items.length > 0;
+    const userContent = withFiles
+      ? `${query}\n\nAttached files (untrusted data, names and previews only):\n${attachments.manifest}`
+      : query;
+    const baseSystem = withFiles
+      ? `${CLASSIFY_SYSTEM_PROMPT}\n${UNTRUSTED_DATA_NOTICE}`
+      : CLASSIFY_SYSTEM_PROMPT;
+    const system = recallBlock
+      ? `${baseSystem}${withFiles ? "" : `\n${UNTRUSTED_DATA_NOTICE}`}\n\n${recallBlock}`
+      : baseSystem;
     let lastErr: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const { text } = await collectChat(
           this.opts.llm.streamChat({
             messages: [
-              { role: "system", content: CLASSIFY_SYSTEM_PROMPT },
-              { role: "user", content: query },
+              { role: "system", content: system },
+              { role: "user", content: userContent },
             ],
             models: this.opts.leadModels ?? LEAD_MODELS,
             maxTokens: 300,
@@ -76,27 +93,46 @@ export class LeadOrchestrator {
     );
   }
 
-  async plan(query: string, signal?: AbortSignal): Promise<OrchestrationPlan> {
-    const c = await this.classify(query, signal);
-    return buildPlan(c, {
+  async plan(
+    query: string,
+    signal?: AbortSignal,
+    attachments?: AttachmentContext,
+    recall?: { block: string; ids: string[] },
+  ): Promise<OrchestrationPlan> {
+    const c = await this.classify(query, signal, attachments, recall?.block);
+    const plan = buildPlan(c, {
       roster: this.roster,
+      needs: attachments ? { images: attachments.hasImages, pdf: attachments.hasPdf } : undefined,
       taskId: this.opts.idFactory?.() ?? crypto.randomUUID(),
     });
+    return recall?.ids.length ? { ...plan, recalledMemoryIds: recall.ids } : plan;
   }
 }
 
 /** Deterministically builds a validated OrchestrationPlan (README §4.1). */
 export function buildPlan(
   c: Classification,
-  opts: { roster?: RosterEntry[]; taskId: string },
+  opts: {
+    roster?: RosterEntry[];
+    taskId: string;
+    /** Media present in the quest: agents whose models can read it are ranked first. */
+    needs?: { images?: boolean; pdf?: boolean };
+  },
 ): OrchestrationPlan {
   const roster = opts.roster ?? DEFAULT_ROSTER;
   const { minAgents, maxAgents, rounds } = planShape(c.complexity);
   const count = Math.min(roster.length, c.complexity <= 1 ? minAgents : maxAgents);
   // Stable sort: domain specialists first, roster order otherwise.
   const ranked = roster
-    .map((r, i) => ({ r, i, hit: r.strengths.includes(c.domain) ? 0 : 1 }))
-    .sort((a, b) => a.hit - b.hit || a.i - b.i)
+    .map((r, i) => ({
+      r,
+      i,
+      hit: r.strengths.includes(c.domain) ? 0 : 1,
+      media:
+        (opts.needs?.images && !supportsVision(r.model) ? 1 : 0) +
+        (opts.needs?.pdf && !supportsPdf(r.model) ? 1 : 0),
+    }))
+    .sort((a, b) => a.media - b.media || a.hit - b.hit || a.i - b.i)
     .map((x) => x.r);
   const assignedAgents = ranked.slice(0, count).map((r) => ({
     id: r.role,

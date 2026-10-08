@@ -3,7 +3,9 @@ import { getDb, schema, type DB } from "../db";
 import type { CouncilEvent, OrchestrationPlan } from "../shared";
 import { getBus, type EventBus } from "./bus";
 import { costCapFromEnv } from "./budget";
+import { listSessionAttachments } from "./attachments";
 import { getControl, MAX_GUIDANCE_CHARS } from "./control";
+import type { AttachmentMeta } from "./debate/attachment-context";
 import { createQuest, planSummary, type QuestDeps } from "./quests";
 
 /**
@@ -56,6 +58,8 @@ const ctx = (deps: ServiceDeps) => ({ db: deps.db ?? getDb(), bus: deps.bus ?? g
 export interface StartQuestInput {
   query: string;
   attachmentIds?: string[];
+  /** false opts out of long-term memory extraction. */
+  remember?: boolean;
   source: QuestSource;
   /** May only LOWER the MAX_COST_USD_PER_QUEST cap. */
   maxCostUsd?: number;
@@ -67,6 +71,7 @@ export interface StartQuestResult {
   questId: string;
   plan: OrchestrationPlan;
   status: string;
+  attachments: AttachmentMeta[];
   /** Resolves when the debate finishes (tests / internal use). */
   done: Promise<void>;
 }
@@ -116,11 +121,8 @@ function enforceMcpLimits(db: DB): void {
 }
 
 export async function startQuest(input: StartQuestInput, deps: ServiceDeps = {}): Promise<StartQuestResult> {
-  const query = input.query?.trim();
-  if (!query) throw new ServiceError("invalid", "query is required");
-  if (input.attachmentIds?.length) {
-    throw new ServiceError("invalid", "attachments are not supported yet");
-  }
+  const query = input.query?.trim() ?? "";
+  if (!query && !input.attachmentIds?.length) throw new ServiceError("invalid", "query is required");
   let costCapUsd = costCapFromEnv();
   if (input.source === "mcp") {
     enforceMcpLimits(deps.db ?? getDb());
@@ -132,12 +134,16 @@ export async function startQuest(input: StartQuestInput, deps: ServiceDeps = {})
     }
     costCapUsd = Math.min(costCapUsd, input.maxCostUsd);
   }
-  const { questId, plan, done } = await createQuest(query, { ...deps, source: input.source, costCapUsd });
+  const { questId, plan, done, attachments } = await createQuest(
+    query,
+    { ...deps, source: input.source, costCapUsd },
+    { attachmentIds: input.attachmentIds, remember: input.remember },
+  );
   let status = plan.requiresApproval ? "awaiting_approval" : "running";
   if (plan.requiresApproval && input.autoApprove && getControl(questId)?.decide(true)) {
     status = "running";
   }
-  return { questId, plan, status, done };
+  return { questId, plan, status, attachments, done };
 }
 
 export interface EventSummary {
@@ -159,6 +165,7 @@ export interface QuestSnapshot {
   complexity: number | null;
   rounds: number | null;
   agents: { id: string; role: string; model: string }[];
+  attachments: { id: string; filename: string; kind: string }[];
   awaitingApproval: boolean;
   paused: boolean;
   totalTokens: number;
@@ -231,6 +238,7 @@ export function getQuestSnapshot(
     complexity: plan?.complexity ?? null,
     rounds: plan?.rounds ?? null,
     agents: matrix.map((a) => ({ id: a.id, role: a.role, model: a.model })),
+    attachments: listSessionAttachments(questId, db).map((a) => ({ id: a.id, filename: a.filename, kind: a.kind })),
     awaitingApproval,
     paused: !!getControl(questId)?.paused,
     totalTokens: session.totalTokens,

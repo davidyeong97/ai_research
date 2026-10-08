@@ -7,4 +7,8 @@ export async function register(): Promise<void> {
   recoverStrandedQuests();
   const { purgeExpired } = await import("./lib/council/cache");
   purgeExpired();
+  const { purgeStaleUploads } = await import("./lib/council/attachments");
+  purgeStaleUploads().catch(() => {});
+  const { consolidateOnStartup } = await import("./lib/council/memory/consolidate");
+  consolidateOnStartup();
 }

@@ -5,6 +5,7 @@ import type { AgentState, AgentStatus, InspectSelection } from "@/lib/client/que
 const STATUS_STYLE: Record<AgentStatus, string> = {
   IDLE: "bg-zinc-600 text-white",
   FACT_CHECKING: "bg-orange-400 text-black",
+  RECALL: "bg-pink-300 text-black",
   FALLBACK: "bg-fuchsia-400 text-black",
   CONSENSUS: "bg-teal-300 text-black",
   THINKING: "bg-amber-400 text-black",

@@ -79,6 +79,9 @@ describe("CouncilEventSchema", () => {
       expect(CouncilEventSchema.safeParse({ ...event, action }).success).toBe(true);
     }
   });
+  it("includes RECALL", () => {
+    expect(COUNCIL_ACTIONS).toContain("RECALL");
+  });
   it("rejects unknown action", () => {
     expect(CouncilEventSchema.safeParse({ ...event, action: "DANCING" }).success).toBe(false);
   });

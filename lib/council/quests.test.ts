@@ -53,13 +53,13 @@ describe("quest cost persistence", () => {
       reasoning: "thinking",
       usage: { costUsd: 0.01 },
     }).enqueue(classify);
-    const { questId, plan, done } = await createQuest("q", { db, bus, llm });
+    const { questId, plan, done } = await createQuest("q", { db, bus, llm }, { remember: false });
     await done;
     const events: Array<{ action: string; data: Record<string, unknown> }> = [];
     bus.subscribe(questId, 0, (e) => events.push(e as never));
-    const factCheckCalls =
-      plan.executionPlan.maxRounds >= 2 || plan.complexityScore >= 4 ? 1 : 0;
-    const n = plan.executionPlan.assignedAgents.length * plan.executionPlan.maxRounds + 1 + factCheckCalls;
+    const factCheckCalls = plan.executionPlan.maxRounds >= 2 || plan.complexityScore >= 4 ? 1 : 0;
+    const n =
+      plan.executionPlan.assignedAgents.length * plan.executionPlan.maxRounds + 1 + factCheckCalls;
 
     const rows = db
       .select()

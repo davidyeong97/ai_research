@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDb, type DB } from "../db";
 import { EventBus } from "./bus";
-import { MockLLMClient } from "./llm";
+import { MockLLMClient, textOf } from "./llm";
 import {
   controlQuest,
   decideApproval,
@@ -21,7 +21,7 @@ let llm: MockLLMClient;
 function setup(complexity: number, usage?: { costUsd: number }) {
   const db = createDb(":memory:");
   llm = new MockLLMClient((p) =>
-    p.messages[0].content.includes("Lead Orchestrator")
+    textOf(p.messages[0].content).includes("Lead Orchestrator")
       ? JSON.stringify({ domain: "coding", complexity })
       : { text: "reply", usage },
   );

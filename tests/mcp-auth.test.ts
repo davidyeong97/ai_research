@@ -6,7 +6,7 @@ import { resetMcpRateLimit } from "@/lib/auth/mcp";
 import { createDb } from "@/lib/db";
 import { schema } from "@/lib/db";
 import { EventBus } from "@/lib/council/bus";
-import { MockLLMClient } from "@/lib/council/llm";
+import { MockLLMClient, textOf } from "@/lib/council/llm";
 import { ServiceError, startQuest, type ServiceDeps } from "@/lib/council/service";
 
 const TOKEN = "t".repeat(48);
@@ -67,7 +67,7 @@ describe("mcp guardrails", () => {
   beforeEach(() => {
     const db = createDb(":memory:");
     const llm = new MockLLMClient((p) =>
-      p.messages[0].content.includes("Lead Orchestrator")
+      textOf(p.messages[0].content).includes("Lead Orchestrator")
         ? JSON.stringify({ domain: "coding", complexity: 3 })
         : { text: "reply" },
     );
