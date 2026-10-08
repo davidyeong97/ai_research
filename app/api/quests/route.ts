@@ -27,9 +27,9 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const { questId, plan, attachments } = await startQuest({
       query: body.data.query,
-      source: "web",
       attachmentIds,
       remember: body.data.remember,
+      source: "web",
     });
     return Response.json({ questId, plan, attachments }, { status: 201 });
   } catch (e) {

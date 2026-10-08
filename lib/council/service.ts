@@ -3,6 +3,7 @@ import { getDb, schema, type DB } from "../db";
 import type { CouncilEvent, OrchestrationPlan } from "../shared";
 import { getBus, type EventBus } from "./bus";
 import { costCapFromEnv } from "./budget";
+import { listSessionAttachments } from "./attachments";
 import { getControl, MAX_GUIDANCE_CHARS } from "./control";
 import type { AttachmentMeta } from "./debate/attachment-context";
 import { createQuest, planSummary, type QuestDeps } from "./quests";
@@ -57,6 +58,7 @@ const ctx = (deps: ServiceDeps) => ({ db: deps.db ?? getDb(), bus: deps.bus ?? g
 export interface StartQuestInput {
   query: string;
   attachmentIds?: string[];
+  /** false opts out of long-term memory extraction. */
   remember?: boolean;
   source: QuestSource;
   /** May only LOWER the MAX_COST_USD_PER_QUEST cap. */
@@ -163,6 +165,7 @@ export interface QuestSnapshot {
   complexity: number | null;
   rounds: number | null;
   agents: { id: string; role: string; model: string }[];
+  attachments: { id: string; filename: string; kind: string }[];
   awaitingApproval: boolean;
   paused: boolean;
   totalTokens: number;
@@ -235,6 +238,7 @@ export function getQuestSnapshot(
     complexity: plan?.complexity ?? null,
     rounds: plan?.rounds ?? null,
     agents: matrix.map((a) => ({ id: a.id, role: a.role, model: a.model })),
+    attachments: listSessionAttachments(questId, db).map((a) => ({ id: a.id, filename: a.filename, kind: a.kind })),
     awaitingApproval,
     paused: !!getControl(questId)?.paused,
     totalTokens: session.totalTokens,

@@ -2,6 +2,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { getDb } from "../db";
+import { deleteAttachments, saveMcpAttachments, maxBase64Chars } from "./attachments";
 import { buildExport } from "../council/export";
 import {
   controlQuest,
@@ -75,6 +76,7 @@ function snapshotText(s: QuestSnapshot): string {
   ];
   const url = viewUrl(s.questId);
   if (url) lines.push(`Watch live: ${url}`);
+  if (s.attachments.length) lines.push(`Attachments: ${s.attachments.map((a) => `${a.filename} (${a.kind})`).join(", ")}`);
   if (s.agents.length) lines.push(`Agents: ${s.agents.map((a) => `${a.role} (${a.model})`).join(", ")}`);
   const progress = s.recent
     .filter((e) => e.message || e.statusMessage)
@@ -91,6 +93,20 @@ function snapshotText(s: QuestSnapshot): string {
 function snapshotStructured(s: QuestSnapshot): Structured {
   return { ...s, ...(viewUrl(s.questId) ? { viewUrl: viewUrl(s.questId) } : {}), nextStep: nextStep(s) || undefined };
 }
+
+const attachmentsSchema = z
+  .array(
+    z.object({
+      filename: z.string().min(1).max(200).describe("File name with extension, e.g. photo.png or notes.md"),
+      mimeType: z.string().max(100).optional().describe("Declared MIME type (the real type is detected from the bytes)."),
+      dataBase64: z.string().min(1).max(maxBase64Chars()).describe("File content, base64-encoded."),
+    }),
+  )
+  .max(5)
+  .optional()
+  .describe(
+    "Optional files for the council to analyze (max 5; images png/jpeg/gif/webp, PDF, or text/markdown/code; 10 MB each, 25 MB total). Only attach what the user okayed sending to third-party model providers.",
+  );
 
 const questId = z.string().min(1).describe("Quest id returned by council_ask / council_start");
 const maxCostUsd = z
@@ -112,6 +128,31 @@ export function createCouncilMcpServer(deps: ServiceDeps = {}): McpServer {
     },
   );
 
+  const start = async (args: {
+    question: string;
+    maxCostUsd?: number;
+    autoApprove?: boolean;
+    attachments?: Parameters<typeof saveMcpAttachments>[0];
+  }) => {
+    const db = (deps.db ?? getDb()) as Parameters<typeof saveMcpAttachments>[1];
+    const attachmentIds = await saveMcpAttachments(args.attachments, db);
+    try {
+      return await startQuest(
+        {
+          query: args.question,
+          attachmentIds,
+          source: "mcp",
+          maxCostUsd: args.maxCostUsd,
+          autoApprove: args.autoApprove ?? false,
+        },
+        deps,
+      );
+    } catch (e) {
+      await deleteAttachments(attachmentIds, db);
+      throw e;
+    }
+  };
+
   const snapshotResult = (s: QuestSnapshot) => ok(snapshotText(s), snapshotStructured(s));
   const waitSecs = (n: number | undefined, dflt: number) => Math.min(MAX_WAIT_SECONDS, Math.max(0, n ?? dflt)) * 1000;
 
@@ -125,15 +166,13 @@ export function createCouncilMcpServer(deps: ServiceDeps = {}): McpServer {
         question: z.string().min(1).max(8000).describe("The question or task to debate. Be specific and self-contained."),
         maxCostUsd,
         autoApprove,
+        attachments: attachmentsSchema,
         waitSeconds: z.number().min(0).max(MAX_WAIT_SECONDS).optional().describe("Seconds to wait for the answer (default 45, max 50)."),
       },
     },
     (args) =>
       guarded(async () => {
-        const r = await startQuest(
-          { query: args.question, source: "mcp", maxCostUsd: args.maxCostUsd, autoApprove: args.autoApprove ?? false },
-          deps,
-        );
+        const r = await start(args);
         const snap = await waitForQuest(r.questId, { timeoutMs: waitSecs(args.waitSeconds, 45) }, deps);
         return snapshotResult(snap);
       }),
@@ -145,19 +184,17 @@ export function createCouncilMcpServer(deps: ServiceDeps = {}): McpServer {
       title: "Start a Council quest",
       description:
         "Start a Council debate without waiting. Returns the questId and a plan summary (complexity, agents/models, rounds, budget, whether human approval is required). Follow up with council_status.",
-      inputSchema: { question: z.string().min(1).max(8000), maxCostUsd, autoApprove },
+      inputSchema: { question: z.string().min(1).max(8000), maxCostUsd, autoApprove, attachments: attachmentsSchema },
     },
     (args) =>
       guarded(async () => {
-        const r = await startQuest(
-          { query: args.question, source: "mcp", maxCostUsd: args.maxCostUsd, autoApprove: args.autoApprove ?? false },
-          deps,
-        );
+        const r = await start(args);
         const summary = planSummary(r.plan);
         const requiresApproval = r.status === "awaiting_approval";
         const text = [
           `Started quest ${r.questId} (${r.status}).`,
           `Complexity ${summary.complexity}, ${summary.rounds} round(s), agents: ${summary.agents.map((a) => `${a.role} (${a.model})`).join(", ")}.`,
+          r.attachments.length ? `Attachments: ${r.attachments.map((a) => a.filename).join(", ")}.` : "",
           `Token budget: ${r.plan.budgetCapTokens}.`,
           requiresApproval
             ? "Human approval required: show the plan to the user and call council_approve only after they agree."
@@ -171,6 +208,7 @@ export function createCouncilMcpServer(deps: ServiceDeps = {}): McpServer {
           status: r.status,
           requiresApproval,
           plan: summary,
+          attachments: r.attachments.map((a) => ({ id: a.id, filename: a.filename, kind: a.kind })),
           budgetCapTokens: r.plan.budgetCapTokens,
           ...(viewUrl(r.questId) ? { viewUrl: viewUrl(r.questId) } : {}),
         });

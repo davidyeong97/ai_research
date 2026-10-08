@@ -25,7 +25,8 @@ export function AppShell() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("arena");
-  const { state, starting, uploading, connectionError, start, attach, control, approve } = useQuestStream();
+  const { state, starting, uploading, connectionError, start, attach, control, approve } =
+    useQuestStream();
   const [recentOpen, setRecentOpen] = useState(false);
 
   useEffect(() => {

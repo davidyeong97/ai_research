@@ -234,5 +234,5 @@ export function useQuestStream(): UseQuestStream {
     };
   }, []);
 
-return { state, starting, uploading, connectionError, start, attach, control, approve };
+  return { state, starting, uploading, connectionError, start, attach, control, approve };
 }
