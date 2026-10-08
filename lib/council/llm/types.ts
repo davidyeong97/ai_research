@@ -59,8 +59,23 @@ export type LLMChunk =
   | { type: "fallback"; primary: string; modelUsed: string }
   | { type: "usage"; usage: LLMUsage };
 
+export interface EmbedParams {
+  texts: string[];
+  model: string;
+  signal?: AbortSignal;
+}
+
+export interface EmbedResult {
+  /** One vector per input text, same order. */
+  vectors: number[][];
+  tokens: number;
+  costUsd: number;
+}
+
 export interface LLMClient {
   streamChat(params: StreamChatParams): AsyncIterable<LLMChunk>;
+  /** Text embeddings (used by cross-quest memory). */
+  embed(params: EmbedParams): Promise<EmbedResult>;
 }
 
 /** Collects a full stream into text, reasoning and usage. */

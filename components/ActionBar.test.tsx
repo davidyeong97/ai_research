@@ -56,7 +56,10 @@ describe("ActionBar attachments", () => {
 
   it("shows validation errors for type, size, and count", () => {
     render(<ActionBar onSubmit={vi.fn()} />);
-    pick([file("evil.exe", "application/x-msdownload"), file("big.png", "image/png", 11 * 1024 * 1024)]);
+    pick([
+      file("evil.exe", "application/x-msdownload"),
+      file("big.png", "image/png", 11 * 1024 * 1024),
+    ]);
     expect(screen.queryAllByTestId("attachment-chip")).toHaveLength(0);
     expect(screen.getByText(/evil\.exe: unsupported/)).toBeTruthy();
     expect(screen.getByText(/big\.png: too large/)).toBeTruthy();

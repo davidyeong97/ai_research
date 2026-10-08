@@ -20,6 +20,27 @@ const started = () => {
   return questReducer(initialQuestState, { type: "start", questId: "q1", plan: MOCK_PLAN });
 };
 
+describe("questReducer RECALL", () => {
+  it("renders a status transcript entry without changing agent status", () => {
+    const s = run(
+      started(),
+      ev({
+        agentId: "lead",
+        action: "RECALL",
+        round: 0,
+        data: { count: 2, preview: ["likes tea", "uses vim"] },
+      }),
+    );
+    expect(s.transcript.at(-1)).toMatchObject({
+      kind: "status",
+      action: "RECALL",
+      text: "Recalled 2 memories: likes tea | uses vim",
+    });
+    expect(s.agents.every((a) => a.status === "IDLE")).toBe(true);
+    expect(s.phase).toBe("running");
+  });
+});
+
 describe("questReducer", () => {
   it("start builds agents from the plan", () => {
     const s = started();
@@ -75,7 +96,12 @@ describe("questReducer", () => {
         data: {
           message: "Hi",
           thought: "because",
-          citations: [{ url: "https://a.com/x", title: "A" }, { url: 5 }, "bad", { url: "https://b.org" }],
+          citations: [
+            { url: "https://a.com/x", title: "A" },
+            { url: 5 },
+            "bad",
+            { url: "https://b.org" },
+          ],
           model: "m/x",
           costUsd: 0.002,
           latencyMs: 1200,

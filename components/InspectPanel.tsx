@@ -15,8 +15,7 @@ export function safeHost(url: string): string | null {
   }
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (

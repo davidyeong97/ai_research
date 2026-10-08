@@ -1,7 +1,15 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { streamText, type ModelMessage } from "ai";
 import { hasMedia } from "./types";
-import type { ChatMessage, Citation, LLMChunk, LLMClient, StreamChatParams } from "./types";
+import type {
+  ChatMessage,
+  Citation,
+  EmbedParams,
+  EmbedResult,
+  LLMChunk,
+  LLMClient,
+  StreamChatParams,
+} from "./types";
 
 export type PdfEngine = "pdf-text" | "mistral-ocr" | "native";
 
@@ -40,8 +48,7 @@ export function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
 /** OpenRouter plugins for a request (web search and/or PDF file parser). */
 export function buildPlugins(params: Pick<StreamChatParams, "messages" | "webSearch">) {
   const plugins: Array<
-    | { id: "web"; max_results: number }
-    | { id: "file-parser"; pdf: { engine: PdfEngine } }
+    { id: "web"; max_results: number } | { id: "file-parser"; pdf: { engine: PdfEngine } }
   > = [];
   if (params.webSearch) plugins.push({ id: "web", max_results: params.webSearch.maxResults });
   const hasPdf = params.messages.some(
@@ -60,11 +67,38 @@ export interface OpenRouterClientOptions {
 
 export class OpenRouterClient implements LLMClient {
   private readonly provider: ReturnType<typeof createOpenRouter>;
+  private readonly apiKey: string;
 
   constructor(opts: OpenRouterClientOptions = {}) {
     const apiKey = opts.apiKey ?? process.env.OPENROUTER_API_KEY;
     if (!apiKey) throw new Error("OPENROUTER_API_KEY is not set");
+    this.apiKey = apiKey;
     this.provider = createOpenRouter({ apiKey });
+  }
+
+  /** POST /api/v1/embeddings (OpenAI-compatible). */
+  async embed({ texts, model, signal }: EmbedParams): Promise<EmbedResult> {
+    if (texts.length === 0) return { vectors: [], tokens: 0, costUsd: 0 };
+    const res = await fetch("https://openrouter.ai/api/v1/embeddings", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, input: texts }),
+      signal,
+    });
+    if (!res.ok) throw new Error(`Embeddings request failed: HTTP ${res.status}`);
+    const json = (await res.json()) as {
+      data?: Array<{ index?: number; embedding?: number[] }>;
+      usage?: { prompt_tokens?: number; total_tokens?: number; cost?: number };
+    };
+    const data = [...(json.data ?? [])].sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    if (data.length !== texts.length || data.some((d) => !Array.isArray(d.embedding))) {
+      throw new Error("Embeddings response malformed");
+    }
+    return {
+      vectors: data.map((d) => d.embedding as number[]),
+      tokens: json.usage?.prompt_tokens ?? json.usage?.total_tokens ?? 0,
+      costUsd: json.usage?.cost ?? 0,
+    };
   }
 
   async *streamChat(params: StreamChatParams): AsyncIterable<LLMChunk> {

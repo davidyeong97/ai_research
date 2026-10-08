@@ -56,7 +56,10 @@ export function ApprovalDialog({
         {approval.attachments.length > 0 && (
           <ul aria-label="Attachments" className="space-y-1">
             {approval.attachments.map((a) => (
-              <li key={a.id} className="break-all border-2 border-black bg-black/40 px-2 py-1 text-xs">
+              <li
+                key={a.id}
+                className="break-all border-2 border-black bg-black/40 px-2 py-1 text-xs"
+              >
                 {a.kind === "image" ? "🖼" : "📄"} {a.filename}
               </li>
             ))}

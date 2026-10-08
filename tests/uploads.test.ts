@@ -81,7 +81,9 @@ describe("uploads", () => {
     const img = await saveUpload(f(PNG, "a.png"));
     const txt = await saveUpload(f("<script>1</script>", "a.html"));
     const call = (id: string) =>
-      GET(new NextRequest(`http://localhost/api/uploads/${id}`), { params: Promise.resolve({ id }) });
+      GET(new NextRequest(`http://localhost/api/uploads/${id}`), {
+        params: Promise.resolve({ id }),
+      });
     const r1 = await call(img.id);
     expect(r1.headers.get("content-type")).toBe("image/png");
     expect(r1.headers.get("content-disposition")).toMatch(/^inline/);
@@ -96,10 +98,12 @@ describe("uploads", () => {
 
   it("links to sessions once and purges stale unlinked uploads", async () => {
     const db = getDb();
-    db.insert(schema.sessions).values([
-      { id: "s1", query: "q", createdAt: 1 },
-      { id: "s2", query: "q", createdAt: 1 },
-    ]).run();
+    db.insert(schema.sessions)
+      .values([
+        { id: "s1", query: "q", createdAt: 1 },
+        { id: "s2", query: "q", createdAt: 1 },
+      ])
+      .run();
     const a = await saveUpload(f(PNG, "a.png"));
     const b = await saveUpload(f(PNG, "b.png"));
     linkToSession([a.id], "s1");

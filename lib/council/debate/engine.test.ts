@@ -84,7 +84,9 @@ describe("runDebate", () => {
     expect(llm.calls[0].messages[1].content).toBe("Q?");
     const r2wizard = llm.calls[3].messages[1].content;
     expect(r2wizard).toContain("msg2");
-    expect(r2wizard).toMatch(/Your previous position:\n<peer_message[^>]*>\nmsg1\n<\/peer_message>/);
+    expect(r2wizard).toMatch(
+      /Your previous position:\n<peer_message[^>]*>\nmsg1\n<\/peer_message>/,
+    );
     expect(r2wizard).toContain("msg3"); // fact-check verdict
     // Call 4 is the lead's summary; round 3 scout sees wizard round-2 message (msg3), not round-1's (msg1).
     const r3scout = llm.calls[7].messages[1].content;
