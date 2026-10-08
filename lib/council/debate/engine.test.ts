@@ -1,3 +1,4 @@
+import { textOf } from "@/lib/council/llm";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb, schema } from "../../db";
@@ -83,7 +84,9 @@ describe("runDebate", () => {
     expect(llm.calls[0].messages[1].content).toBe("Q?");
     const r2wizard = llm.calls[3].messages[1].content;
     expect(r2wizard).toContain("msg2");
-    expect(r2wizard).toMatch(/Your previous position:\n<peer_message[^>]*>\nmsg1\n<\/peer_message>/);
+    expect(r2wizard).toMatch(
+      /Your previous position:\n<peer_message[^>]*>\nmsg1\n<\/peer_message>/,
+    );
     expect(r2wizard).toContain("msg3"); // fact-check verdict
     // Call 4 is the lead's summary; round 3 scout sees wizard round-2 message (msg3), not round-1's (msg1).
     const r3scout = llm.calls[7].messages[1].content;
@@ -100,13 +103,13 @@ describe("runDebate", () => {
     let n = 0;
     const llm: MockLLMClient = new MockLLMClient((p): string => {
       const sys = p.messages[0].content;
-      if (sys.includes("Summarize the debate")) return "SUMMARY-TEXT";
+      if (textOf(sys).includes("Summarize the debate")) return "SUMMARY-TEXT";
       return `R${p.messages.length}-${++n}-UNIQUE`;
     });
     const plan = makePlan(4);
     const { events, rows } = await run(plan, llm);
     const summaryCalls = llm.calls.filter((c) =>
-      c.messages[0].content.includes("Summarize the debate"),
+      textOf(c.messages[0].content).includes("Summarize the debate"),
     );
     expect(summaryCalls).toHaveLength(2); // before rounds 3 and 4
     expect(summaryCalls[0].models).toEqual(LEAD_MODELS);
@@ -227,7 +230,7 @@ describe("runDebate web search", () => {
 describe("runDebate fact-check", () => {
   it("emits FACT_CHECKING, records budget, persists, and feeds verdict to round 2", async () => {
     const llm = new MockLLMClient((p) =>
-      p.messages[0].content.includes("fact-checker") ? "VERDICT-XYZ" : "claim",
+      textOf(p.messages[0].content).includes("fact-checker") ? "VERDICT-XYZ" : "claim",
     );
     const { events, rows } = await run(makePlan(2), llm);
     const idx = events.findIndex((e) => e.action === "FACT_CHECKING");

@@ -30,6 +30,7 @@ export const COUNCIL_ACTIONS = [
   "SEARCHING",
   "SPEAKING",
   "FACT_CHECKING",
+  "RECALL",
   "PAUSED",
   "FALLBACK",
   "CONSENSUS",

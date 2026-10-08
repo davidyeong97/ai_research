@@ -60,8 +60,7 @@ export function placeBubble(opts: {
   const fitsBelow = anchorBottom + gap + bh <= stageH - margin;
   const order = fitsAbove || !fitsBelow ? [mk(false), mk(true)] : [mk(true), mk(false)];
   if (fitsAbove && !fitsBelow) order.splice(0, 2, mk(false), mk(true));
-  const score = (p: BubblePlacement) =>
-    avoid.reduce((n, r) => n + (rectsOverlap(p, r) ? 1 : 0), 0);
+  const score = (p: BubblePlacement) => avoid.reduce((n, r) => n + (rectsOverlap(p, r) ? 1 : 0), 0);
   let best = order[0];
   let bestScore = score(best);
   for (const c of order.slice(1)) {

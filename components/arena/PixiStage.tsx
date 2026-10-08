@@ -141,7 +141,10 @@ export default function PixiStage({
     () => trackSpeaker({ lines: {}, speaker: null }, agents),
   );
   const next = trackSpeaker(tracked, agents);
-  if (next.speaker !== tracked.speaker || JSON.stringify(next.lines) !== JSON.stringify(tracked.lines))
+  if (
+    next.speaker !== tracked.speaker ||
+    JSON.stringify(next.lines) !== JSON.stringify(tracked.lines)
+  )
     setTracked(next);
   const hostRef = useRef<HTMLDivElement>(null);
   const agentsRef = useRef(agents);
@@ -268,9 +271,26 @@ export default function PixiStage({
           root.addChild(body, fx, label, hp, tag, badge);
           layer!.addChild(root);
           v = {
-            root, body, sprite, flash, label, hp, avatar: a.avatar,
-            badge, badgeBg, badgeLabel, badgeKey: "", tag, fx, bubble, bubbleGfx, bubbleText,
-            line: "", bubbleT: 0, fallbackKey: "", fallbackT: 0,
+            root,
+            body,
+            sprite,
+            flash,
+            label,
+            hp,
+            avatar: a.avatar,
+            badge,
+            badgeBg,
+            badgeLabel,
+            badgeKey: "",
+            tag,
+            fx,
+            bubble,
+            bubbleGfx,
+            bubbleText,
+            line: "",
+            bubbleT: 0,
+            fallbackKey: "",
+            fallbackT: 0,
           };
           seats.set(a.id, v);
         }
@@ -374,7 +394,12 @@ export default function PixiStage({
             const ang = (n / 8) * Math.PI * 2 + k * 2;
             const r = (px / 2) * (0.4 + k);
             v.fx
-              .rect(Math.round(Math.cos(ang) * r) - 2, Math.round(-px / 2 + Math.sin(ang) * r) - 2, 4, 4)
+              .rect(
+                Math.round(Math.cos(ang) * r) - 2,
+                Math.round(-px / 2 + Math.sin(ang) * r) - 2,
+                4,
+                4,
+              )
               .fill({ color: 0xf0abfc, alpha: 1 - k });
           }
         }
@@ -465,7 +490,8 @@ export default function PixiStage({
       <ul className="sr-only" data-testid="stage-a11y-list">
         {orderAgents(agents).map((a) => (
           <li key={a.id}>
-            {a.role}: {statusLabel(a.status)}, {Math.round(a.remainingRatio * 100)}% budget remaining
+            {a.role}: {statusLabel(a.status)}, {Math.round(a.remainingRatio * 100)}% budget
+            remaining
             {onInspect && (
               <button type="button" onClick={() => onInspect({ agentId: a.id })}>
                 Inspect {a.role}

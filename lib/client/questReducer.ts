@@ -1,6 +1,7 @@
 import type { CouncilAction, CouncilEvent, OrchestrationPlan } from "@/lib/shared";
 
-export type AgentStatus = CouncilAction | "IDLE";
+/** RECALL is a one-shot event, never an agent status (later bead may change this). */
+export type AgentStatus = Exclude<CouncilAction, "RECALL"> | "IDLE";
 
 export interface AgentState {
   id: string;
@@ -33,7 +34,14 @@ export interface InspectSelection {
   entryId?: number;
 }
 
-export type TranscriptKind = "message" | "status" | "final" | "error" | "director";
+export type TranscriptKind =
+  "message" | "status" | "final" | "error" | "director" | "quest" | "digest";
+
+export interface AttachmentRef {
+  id: string;
+  filename: string;
+  kind: "image" | "pdf" | "text";
+}
 
 export interface PendingApproval {
   plan: {
@@ -44,6 +52,7 @@ export interface PendingApproval {
   };
   estimatedMaxTokens: number | null;
   estimatedMaxCostUsd: number | null;
+  attachments: AttachmentRef[];
 }
 
 export interface TranscriptEntry {
@@ -60,6 +69,7 @@ export interface TranscriptEntry {
   model?: string;
   costUsd?: number;
   latencyMs?: number;
+  attachments?: AttachmentRef[];
 }
 
 export type QuestPhase = "idle" | "running" | "done" | "error";
@@ -129,6 +139,17 @@ const num = (v: unknown): number | undefined =>
 const rec = (v: unknown): Record<string, unknown> | undefined =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
 
+function parseAttachments(v: unknown): AttachmentRef[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((a): AttachmentRef[] => {
+    const r = rec(a);
+    const id = str(r?.id);
+    const kind = str(r?.kind);
+    if (!id || (kind !== "image" && kind !== "pdf" && kind !== "text")) return [];
+    return [{ id, filename: str(r?.filename) ?? id, kind }];
+  });
+}
+
 function parseCitations(v: unknown): Citation[] | undefined {
   if (!Array.isArray(v)) return undefined;
   const out = v.flatMap((c): Citation[] => {
@@ -197,12 +218,23 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "FACT_CHECKING":
     case "CONSENSUS": {
       const status = str(d.statusMessage);
+      const action = e.action;
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({
         ...a,
-        status: e.action,
+        status: action,
         latestLine: status ?? a.latestLine,
       }));
       if (status) next.transcript = [...state.transcript, entry("status", status)];
+      return next;
+    }
+    case "RECALL": {
+      // Minimal rendering; richer memory UI is a later bead.
+      const count = num(d.count) ?? 0;
+      const preview = Array.isArray(d.preview)
+        ? d.preview.filter((p): p is string => typeof p === "string").join(" | ")
+        : (str(d.preview) ?? "");
+      const text = `Recalled ${count} ${count === 1 ? "memory" : "memories"}${preview ? `: ${preview}` : ""}`;
+      next.transcript = [...state.transcript, entry("status", text)];
       return next;
     }
     case "PAUSED": {
@@ -224,6 +256,7 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
           },
           estimatedMaxTokens: num(d.estimatedMaxTokens) ?? null,
           estimatedMaxCostUsd: num(d.estimatedMaxCostUsd) ?? null,
+          attachments: parseAttachments(d.attachments),
         };
         return next;
       }
@@ -258,8 +291,25 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "SPEAKING": {
       const rawMessage = str(d.message) ?? str(d.text) ?? "";
       const message = d.factCheck === true ? `Fact-check 🔍: ${rawMessage}` : rawMessage;
+      if (e.agentId === "user" && d.userQuery === true) {
+        next.transcript = [
+          ...state.transcript,
+          { ...entry("quest", rawMessage), attachments: parseAttachments(d.attachments) },
+        ];
+        return next;
+      }
       if (e.agentId === "user") {
         next.transcript = [...state.transcript, entry("director", message)];
+        return next;
+      }
+      if (d.attachmentDigest === true) {
+        next.agents = patchAgent(state.agents, e.agentId, (a) => ({
+          ...a,
+          status: "SPEAKING",
+          tokensUsed: a.tokensUsed + e.tokensUsed,
+          costUsd: a.costUsd + (num(d.costUsd) ?? 0),
+        }));
+        next.transcript = [...state.transcript, entry("digest", rawMessage)];
         return next;
       }
       const budget = rec(d.budget);

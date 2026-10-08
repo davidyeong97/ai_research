@@ -11,7 +11,12 @@ afterEach(() => {
   delete process.env.TOOL_CACHE_TTL_HOURS;
 });
 
-const req = { tool: "web_search", maxResults: 3, models: ["a"], messages: [{ role: "user" as const, content: "Hello  World " }] };
+const req = {
+  tool: "web_search",
+  maxResults: 3,
+  models: ["a"],
+  messages: [{ role: "user" as const, content: "Hello  World " }],
+};
 const val = { text: "t", citations: [{ url: "https://x.test" }] };
 
 describe("tool cache", () => {
@@ -51,19 +56,27 @@ describe("engine caching", () => {
     executionPlan: {
       maxRounds: 1,
       toolsAllowed: ["web_search"],
-      assignedAgents: [{ id: "w", role: "wizard", avatar: "wizard", model: "m/a", fallbackModels: [] }],
+      assignedAgents: [
+        { id: "w", role: "wizard", avatar: "wizard", model: "m/a", fallbackModels: [] },
+      ],
     },
   };
   async function go(db: ReturnType<typeof createDb>, id: string, llm: MockLLMClient) {
     const bus = new EventBus(db);
-    db.insert(schema.sessions).values({ id, query: "Q?", status: "running", createdAt: Date.now() }).run();
+    db.insert(schema.sessions)
+      .values({ id, query: "Q?", status: "running", createdAt: Date.now() })
+      .run();
     await runDebate({ db, bus, llm }, id, "Q?", plan);
     return bus.replay(id).filter((e) => e.agentId === "w" && e.action === "SPEAKING")[0];
   }
   it("replays cached search turn with zero cost", async () => {
     const db = createDb(":memory:");
     const mk = () =>
-      new MockLLMClient({ text: "answer", citations: [{ url: "https://a.test", title: "A" }], usage: { costUsd: 0.01 } });
+      new MockLLMClient({
+        text: "answer",
+        citations: [{ url: "https://a.test", title: "A" }],
+        usage: { costUsd: 0.01 },
+      });
     const l1 = mk();
     const e1 = await go(db, "q1", l1);
     expect(e1.data.cached).toBeUndefined();

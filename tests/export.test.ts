@@ -1,3 +1,4 @@
+import { textOf } from "@/lib/council/llm";
 import { beforeAll, describe, expect, it } from "vitest";
 import { EventBus } from "@/lib/council/bus";
 import { MockLLMClient } from "@/lib/council/llm";
@@ -13,7 +14,10 @@ beforeAll(async () => {
 
 async function get(id: string, format?: string) {
   const { GET } = await import("@/app/api/quests/[id]/export/route");
-  return GET(new Request(`http://x/api/quests/${id}/export${format ? `?format=${format}` : ""}`), params(id));
+  return GET(
+    new Request(`http://x/api/quests/${id}/export${format ? `?format=${format}` : ""}`),
+    params(id),
+  );
 }
 
 describe("GET /api/quests/[id]/export", () => {
@@ -23,7 +27,7 @@ describe("GET /api/quests/[id]/export", () => {
     (globalThis as G).__councilBus = new EventBus(db);
     setLLMClient(
       new MockLLMClient((p) =>
-        p.messages[0].content.includes("Lead Orchestrator")
+        textOf(p.messages[0].content).includes("Lead Orchestrator")
           ? JSON.stringify({ domain: "coding", complexity: 3 })
           : "reply text",
       ),
@@ -33,7 +37,9 @@ describe("GET /api/quests/[id]/export", () => {
 
     const md = await get(questId);
     expect(md.status).toBe(200);
-    expect(md.headers.get("content-disposition")).toBe(`attachment; filename="council-${questId}.md"`);
+    expect(md.headers.get("content-disposition")).toBe(
+      `attachment; filename="council-${questId}.md"`,
+    );
     const text = await md.text();
     expect(text).toContain("# What is up?");
     expect(text).toContain("## Plan");
@@ -46,7 +52,13 @@ describe("GET /api/quests/[id]/export", () => {
     const js = await get(questId, "json");
     expect(js.headers.get("content-disposition")).toContain(`council-${questId}.json`);
     const body = await js.json();
-    expect(Object.keys(body).sort()).toEqual(["agentMessages", "events", "plan", "session"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "agentMessages",
+      "attachments",
+      "events",
+      "plan",
+      "session",
+    ]);
     expect(body.session.id).toBe(questId);
     expect(body.events.length).toBeGreaterThan(0);
     expect(body.agentMessages.length).toBeGreaterThan(0);

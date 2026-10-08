@@ -6,7 +6,8 @@ import { ActionBar } from "./ActionBar";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { ArenaPanel } from "./ArenaPanel";
 import { TranscriptPanel } from "./TranscriptPanel";
-import type { InspectSelection } from "@/lib/client/questReducer";
+import type { AttachmentRef, InspectSelection } from "@/lib/client/questReducer";
+import { ImageLightbox } from "./Attachments";
 import { InspectPanel } from "./InspectPanel";
 import { useQuestStream } from "@/hooks/useQuestStream";
 
@@ -17,9 +18,10 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 export function AppShell() {
+  const [lightbox, setLightbox] = useState<AttachmentRef | null>(null);
   const [selected, setSelected] = useState<InspectSelection | null>(null);
   const [tab, setTab] = useState<Tab>("arena");
-  const { state, starting, connectionError, start, control, approve } = useQuestStream();
+  const { state, starting, uploading, connectionError, start, control, approve } = useQuestStream();
   const [unread, setUnread] = useState(false);
   const [prev, setPrev] = useState({ count: 0, verdict: false });
   const count = state.transcript.length;
@@ -63,12 +65,14 @@ export function AppShell() {
             finalAnswer={state.phase === "done" ? state.finalAnswer : null}
             questId={state.questId}
             onInspect={setSelected}
+            onOpenAttachment={setLightbox}
           />
         </section>
       </main>
       <ActionBar
-        onSubmit={(q) => void start(q)}
+        onSubmit={start}
         busy={starting || state.phase === "running"}
+        uploading={uploading}
         error={connectionError}
         running={state.phase === "running" && !state.pendingApproval}
         paused={state.paused}
@@ -85,6 +89,7 @@ export function AppShell() {
           onClose={() => setSelected(null)}
         />
       )}
+      {lightbox && <ImageLightbox attachment={lightbox} onClose={() => setLightbox(null)} />}
       {state.pendingApproval && (
         <ApprovalDialog approval={state.pendingApproval} onDecide={approve} />
       )}
