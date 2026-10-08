@@ -81,19 +81,6 @@ export function StatsBar({
         </button>
       ) : null}
       <AgentBadge source={state.source} />
-      {state.recalled.length > 0 || state.transcript.some((t) => t.kind === "memory") ? (
-        <button
-          type="button"
-          data-testid="stats-memory"
-          aria-label={`Memory: ${state.recalled.length} recalled`}
-          title="Memories recalled for this quest"
-          onClick={onOpenMemory}
-          className="flex min-h-11 min-w-11 flex-none items-center justify-center gap-0.5 border border-black bg-pink-300 px-1.5 text-black"
-        >
-          <span aria-hidden>🧠</span>
-          <span>{state.recalled.length}</span>
-        </button>
-      ) : null}
       <SoundToggle />
     </div>
   );
