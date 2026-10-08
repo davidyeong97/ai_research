@@ -19,6 +19,8 @@ export interface UseQuestStream {
   uploading: boolean;
   /** Upload files (if any) then start the quest. Resolves true on success. */
   start: (query: string, files?: File[]) => Promise<boolean>;
+  /** Attach to an existing quest (replays its events from seq 0). */
+  attach: (questId: string) => Promise<void>;
   /** Pause/resume/inject guidance. Resolves true on success. */
   control: (action: "pause" | "resume" | "inject", text?: string) => Promise<boolean>;
   /** Answer the plan-approval gate. */
@@ -149,6 +151,43 @@ export function useQuestStream(): UseQuestStream {
     [close, connect],
   );
 
+  const attach = useCallback(
+    async (id: string) => {
+      close();
+      lastIdRef.current = 0;
+      quietUntilRef.current = Date.now() + REPLAY_QUIET_MS;
+      setConnectionError(null);
+      const gen = genRef.current;
+      try {
+        const res = await fetch(`/api/quests/${encodeURIComponent(id)}`);
+        const body: unknown = await res.json().catch(() => null);
+        if (gen !== genRef.current) return;
+        if (!res.ok) {
+          dispatch({ type: "reset" });
+          const err = (body as { error?: unknown } | null)?.error;
+          throw new Error(
+            res.status === 404 ? "Quest not found" : typeof err === "string" ? err : `Request failed (${res.status})`,
+          );
+        }
+        const info = body as { source?: unknown; status?: unknown } | null;
+        dispatch({
+          type: "attach",
+          questId: id,
+          source: typeof info?.source === "string" ? info.source : "web",
+        });
+        if (info?.status === "interrupted") {
+          setConnectionError("Quest was interrupted by a server restart");
+        }
+        connect(id, gen, 0);
+      } catch (e) {
+        if (gen === genRef.current) {
+          setConnectionError(e instanceof Error ? e.message : "Failed to open quest");
+        }
+      }
+    },
+    [close, connect],
+  );
+
   const questId = state.questId;
   const post = useCallback(
     async (path: string, payload: unknown): Promise<boolean> => {
@@ -195,5 +234,5 @@ export function useQuestStream(): UseQuestStream {
     };
   }, []);
 
-  return { state, starting, uploading, connectionError, start, control, approve };
+  return { state, starting, uploading, connectionError, start, attach, control, approve };
 }

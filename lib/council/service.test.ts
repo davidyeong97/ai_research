@@ -280,3 +280,16 @@ describe("listQuests", () => {
     expect(listQuests({}, deps)[0]).toMatchObject({ source: "mcp", status: "done", query: "q?" });
   });
 });
+
+describe("questViewUrl", () => {
+  it("builds from PUBLIC_BASE_URL and is undefined when unset", async () => {
+    const { questViewUrl } = await import("./service");
+    const prev = process.env.PUBLIC_BASE_URL;
+    delete process.env.PUBLIC_BASE_URL;
+    expect(questViewUrl("q1")).toBeUndefined();
+    process.env.PUBLIC_BASE_URL = "http://host:3000/";
+    expect(questViewUrl("q1")).toBe("http://host:3000/?quest=q1");
+    if (prev === undefined) delete process.env.PUBLIC_BASE_URL;
+    else process.env.PUBLIC_BASE_URL = prev;
+  });
+});

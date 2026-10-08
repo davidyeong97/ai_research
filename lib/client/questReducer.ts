@@ -84,6 +84,8 @@ export type QuestPhase = "idle" | "running" | "done" | "error";
 
 export interface QuestState {
   questId: string | null;
+  /** Who started the quest ("web" | "mcp"); null before any quest. */
+  source: string | null;
   plan: OrchestrationPlan | null;
   phase: QuestPhase;
   /** True while the director has paused deliberation. */
@@ -105,11 +107,14 @@ export interface QuestState {
 
 export type QuestAction =
   | { type: "reset" }
-  | { type: "start"; questId: string; plan: OrchestrationPlan }
+  | { type: "start"; questId: string; plan: OrchestrationPlan; source?: string }
+  /** Attach to an existing quest; its events are replayed from seq 0. */
+  | { type: "attach"; questId: string; source: string; }
   | { type: "event"; event: CouncilEvent };
 
 export const initialQuestState: QuestState = {
   questId: null,
+  source: null,
   plan: null,
   phase: "idle",
   paused: false,
@@ -189,12 +194,15 @@ export function questReducer(state: QuestState, action: QuestAction): QuestState
       return {
         ...initialQuestState,
         questId: action.questId,
+        source: action.source ?? "web",
         plan: action.plan,
         phase: "running",
         agents: action.plan.executionPlan.assignedAgents.map((a) =>
           newAgent({ id: a.id, role: a.role, avatar: a.avatar, model: a.model }),
         ),
       };
+    case "attach":
+      return { ...initialQuestState, questId: action.questId, source: action.source, phase: "running" };
     case "event":
       return applyEvent(state, action.event);
   }

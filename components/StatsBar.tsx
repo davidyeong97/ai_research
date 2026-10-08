@@ -1,4 +1,5 @@
 import type { QuestState } from "@/lib/client/questReducer";
+import { AgentBadge } from "./AgentBadge";
 import { SoundToggle } from "./SoundToggle";
 
 export type PhaseLabel = "Planning" | "Debating" | "Paused" | "Verdict" | "Error" | "Idle";
@@ -66,6 +67,7 @@ export function StatsBar({
       >
         {phase}
       </span>
+      <AgentBadge source={state.source} />
       {state.recalled.length > 0 || state.transcript.some((t) => t.kind === "memory") ? (
         <button
           type="button"
