@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StatsBar } from "./StatsBar";
 import { ActionBar } from "./ActionBar";
 import { ApprovalDialog } from "./ApprovalDialog";
@@ -8,6 +8,7 @@ import { ArenaPanel } from "./ArenaPanel";
 import { TranscriptPanel } from "./TranscriptPanel";
 import type { InspectSelection } from "@/lib/client/questReducer";
 import { InspectPanel } from "./InspectPanel";
+import { RecentQuests } from "./RecentQuests";
 import { useQuestStream } from "@/hooks/useQuestStream";
 
 type Tab = "arena" | "stream";
@@ -19,7 +20,19 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 export function AppShell() {
   const [selected, setSelected] = useState<InspectSelection | null>(null);
   const [tab, setTab] = useState<Tab>("arena");
-  const { state, starting, connectionError, start, control, approve } = useQuestStream();
+  const { state, starting, connectionError, start, attach, control, approve } =
+    useQuestStream();
+  const [recentOpen, setRecentOpen] = useState(false);
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("quest");
+    if (id) void attach(id);
+  }, [attach]);
+
+  const openQuest = (id: string) => {
+    window.history.pushState(null, "", `/?quest=${encodeURIComponent(id)}`);
+    void attach(id);
+  };
   const [unread, setUnread] = useState(false);
   const [prev, setPrev] = useState({ count: 0, verdict: false });
   const count = state.transcript.length;
@@ -39,9 +52,18 @@ export function AppShell() {
   };
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-indigo-950 pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] font-mono text-indigo-50">
-      <header className="flex-none border-b-4 border-amber-200/80 px-3 py-2 text-center text-lg font-bold tracking-widest text-amber-300">
+      <header className="relative flex-none border-b-4 border-amber-200/80 px-3 py-2 text-center text-lg font-bold tracking-widest text-amber-300">
         ⚔ COUNCIL ⚔
+        <button
+          type="button"
+          onClick={() => setRecentOpen(true)}
+          aria-label="Recent quests"
+          className="absolute right-2 top-1 min-h-11 min-w-11 border-2 border-black bg-amber-300 text-base text-black"
+        >
+          📜
+        </button>
       </header>
+      <RecentQuests open={recentOpen} onClose={() => setRecentOpen(false)} onSelect={openQuest} />
       <StatsBar state={state} />
       <main className="flex min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:divide-x-4 lg:divide-amber-200/80">
         <section

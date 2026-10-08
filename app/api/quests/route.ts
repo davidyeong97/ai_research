@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ServiceError, startQuest } from "@/lib/council/service";
+import { ServiceError, listQuests, startQuest } from "@/lib/council/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,4 +16,10 @@ export async function POST(req: Request): Promise<Response> {
     if (e instanceof ServiceError) return Response.json({ error: e.message }, { status: e.httpStatus });
     return Response.json({ error: e instanceof Error ? e.message : "failed" }, { status: 500 });
   }
+}
+
+export async function GET(req: Request): Promise<Response> {
+  const raw = Number.parseInt(new URL(req.url).searchParams.get("limit") ?? "20", 10);
+  const limit = Number.isFinite(raw) ? raw : 20;
+  return Response.json({ quests: listQuests({ limit }) });
 }
