@@ -16,6 +16,8 @@ describe("ExportControl", () => {
     const md = screen.getByTestId("export-md");
     expect(md.getAttribute("href")).toBe("/api/quests/q1/export?format=md");
     expect(md.className).toContain("min-h-11");
-    expect(screen.getByTestId("export-json").getAttribute("href")).toBe("/api/quests/q1/export?format=json");
+    expect(screen.getByTestId("export-json").getAttribute("href")).toBe(
+      "/api/quests/q1/export?format=json",
+    );
   });
 });

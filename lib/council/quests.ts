@@ -7,7 +7,20 @@ import { runDebate } from "./debate";
 import { buildAgentPrompt } from "./debate/prompts";
 import { costCapFromEnv } from "./budget";
 import { OpenRouterClient, type LLMClient } from "./llm";
+import { extractMemories } from "./memory/extract";
+import { prepareRecall } from "./memory/recall";
+import { touchUsed } from "./memory/store";
 import { LeadOrchestrator } from "./orchestrator";
+import { UploadError, linkToSession, resolveUnlinkedAttachments } from "./attachments";
+import { buildAttachmentContext, type AttachmentMeta } from "./debate/attachment-context";
+
+export const DEFAULT_ATTACHMENT_QUERY = "Analyze the attached file(s).";
+
+export interface CreateQuestOptions {
+  attachmentIds?: string[];
+  /** false opts this quest out of long-term memory extraction. Default true. */
+  remember?: boolean;
+}
 
 export interface QuestDeps {
   db?: DB;
@@ -40,12 +53,33 @@ export const TERMINAL_ACTIONS = ["DONE", "ERROR"] as const;
 export async function createQuest(
   query: string,
   deps: QuestDeps = {},
-): Promise<{ questId: string; plan: OrchestrationPlan; done: Promise<void> }> {
+  options: CreateQuestOptions = {},
+): Promise<{
+  questId: string;
+  plan: OrchestrationPlan;
+  done: Promise<void>;
+  query: string;
+  attachments: AttachmentMeta[];
+}> {
   const db = deps.db ?? getDb();
   const bus = deps.bus ?? getBus();
   const llm = deps.llm ?? getLLMClient();
   const questId = crypto.randomUUID();
-  const plan = await new LeadOrchestrator({ llm, idFactory: () => questId }).plan(query);
+  const records = resolveUnlinkedAttachments(options.attachmentIds ?? [], db);
+  query = query.trim();
+  if (!query) {
+    if (records.length === 0) throw new UploadError(400, "query is required");
+    query = DEFAULT_ATTACHMENT_QUERY;
+  }
+  const attachmentCtx = records.length ? buildAttachmentContext(records, db) : undefined;
+  const attachments = attachmentCtx?.items ?? [];
+  const recall = await prepareRecall(query, { db, llm });
+  const plan = await new LeadOrchestrator({ llm, idFactory: () => questId }).plan(
+    query,
+    undefined,
+    attachmentCtx,
+    recall ? { block: recall.block, ids: recall.ids } : undefined,
+  );
 
   const gated = !!plan.requiresApproval;
 
@@ -66,10 +100,50 @@ export async function createQuest(
       rounds: plan.executionPlan.maxRounds,
     })
     .run();
+  if (records.length) {
+    linkToSession(
+      records.map((r) => r.id),
+      questId,
+      db,
+    );
+    bus.publish({
+      questId,
+      round: 0,
+      agentId: "user",
+      action: "SPEAKING",
+      tokensUsed: 0,
+      data: { userQuery: true, message: query, attachments: attachments.map(brief) },
+    });
+  }
+
+  if (recall) {
+    try {
+      touchUsed(recall.ids, { db });
+    } catch (err) {
+      console.warn("[memory] touchUsed failed:", String(err));
+    }
+    bus.publish({
+      questId,
+      round: 0,
+      agentId: "lead",
+      action: "RECALL",
+      tokensUsed: 0,
+      data: {
+        count: recall.ids.length,
+        ids: recall.ids,
+        chars: recall.chars,
+        preview: recall.preview,
+        kinds: recall.memories.map((m) => m.kind),
+        block: recall.block,
+      },
+    });
+  }
 
   const control = createControl(questId, deps.controlTimeoutMs);
   const run = () =>
     runDebate({ db, bus, llm }, questId, query, plan, {
+      attachments: attachmentCtx,
+      recalled: recall?.block,
       checkpoint: control.checkpointFor(bus),
       buildPrompt: control.wrapPromptBuilder(buildAgentPrompt),
       costCapUsd: deps.costCapUsd,
@@ -89,13 +163,17 @@ export async function createQuest(
       data: {
         awaitingApproval: true,
         plan: planSummary(plan),
+        ...(attachments.length ? { attachments: attachments.map(brief) } : {}),
         estimatedMaxTokens: plan.budgetCapTokens,
         estimatedMaxCostUsd: Math.min(deps.costCapUsd ?? Infinity, estimateMaxCostUsd(plan.budgetCapTokens)),
       },
     });
     flow = approval.then(async (r) => {
       if (r === "approved") {
-        db.update(schema.sessions).set({ status: "running" }).where(eq(schema.sessions.id, questId)).run();
+        db.update(schema.sessions)
+          .set({ status: "running" })
+          .where(eq(schema.sessions.id, questId))
+          .run();
         return run();
       }
       db.update(schema.sessions)
@@ -117,9 +195,16 @@ export async function createQuest(
       });
     });
   }
-  const done = flow.catch(() => undefined).finally(() => dropControl(questId));
-  return { questId, plan, done };
+  const done = flow
+    .catch(() => undefined)
+    // Separate post-quest step: only extracts when the session ended "done"; never throws.
+    .then(() => extractMemories(questId, { db, llm }, { remember: options.remember }))
+    .then(() => undefined)
+    .finally(() => dropControl(questId));
+  return { questId, plan, done, query, attachments };
 }
+
+const brief = (a: AttachmentMeta) => ({ id: a.id, filename: a.filename, kind: a.kind });
 
 /** Rough upper bound: ~$10 per 1M tokens, never above the per-quest cost cap. */
 export function estimateMaxCostUsd(tokens: number): number {

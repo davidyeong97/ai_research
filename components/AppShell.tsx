@@ -6,7 +6,9 @@ import { ActionBar } from "./ActionBar";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { ArenaPanel } from "./ArenaPanel";
 import { TranscriptPanel } from "./TranscriptPanel";
-import type { InspectSelection } from "@/lib/client/questReducer";
+import type { AttachmentRef, InspectSelection } from "@/lib/client/questReducer";
+import { ImageLightbox } from "./Attachments";
+import { MemoryPanel } from "./MemoryPanel";
 import { InspectPanel } from "./InspectPanel";
 import { RecentQuests } from "./RecentQuests";
 import { useQuestStream } from "@/hooks/useQuestStream";
@@ -18,9 +20,12 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 export function AppShell() {
+  const [lightbox, setLightbox] = useState<AttachmentRef | null>(null);
   const [selected, setSelected] = useState<InspectSelection | null>(null);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const [managerOpen, setManagerOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("arena");
-  const { state, starting, connectionError, start, attach, control, approve } =
+  const { state, starting, uploading, connectionError, start, attach, control, approve } =
     useQuestStream();
   const [recentOpen, setRecentOpen] = useState(false);
 
@@ -58,13 +63,22 @@ export function AppShell() {
           type="button"
           onClick={() => setRecentOpen(true)}
           aria-label="Recent quests"
-          className="absolute right-2 top-1 min-h-11 min-w-11 border-2 border-black bg-amber-300 text-base text-black"
+          className="absolute left-2 top-1 min-h-11 min-w-11 border-2 border-black bg-amber-300 text-base text-black"
         >
           📜
         </button>
+        <button
+          type="button"
+          data-testid="memory-button"
+          aria-label="Open memory manager"
+          onClick={() => setManagerOpen(true)}
+          className="absolute right-2 top-1/2 min-h-11 min-w-11 -translate-y-1/2 border-2 border-black bg-pink-300 px-2 text-xs tracking-normal text-black"
+        >
+          🧠 Memory
+        </button>
       </header>
       <RecentQuests open={recentOpen} onClose={() => setRecentOpen(false)} onSelect={openQuest} />
-      <StatsBar state={state} />
+      <StatsBar state={state} onOpenMemory={() => setMemoryOpen(true)} />
       <main className="flex min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:divide-x-4 lg:divide-amber-200/80">
         <section
           id="panel-arena"
@@ -85,19 +99,33 @@ export function AppShell() {
             finalAnswer={state.phase === "done" ? state.finalAnswer : null}
             questId={state.questId}
             onInspect={setSelected}
+            onOpenAttachment={setLightbox}
           />
         </section>
       </main>
       <ActionBar
-        onSubmit={(q) => void start(q)}
+        onSubmit={start}
         busy={starting || state.phase === "running"}
+        uploading={uploading}
         error={connectionError}
         running={state.phase === "running" && !state.pendingApproval}
         paused={state.paused}
         onControl={control}
       />
+      {managerOpen && (
+        <MemoryPanel questId={state.questId} onClose={() => setManagerOpen(false)} />
+      )}
+      {!selected && memoryOpen && (
+        <InspectPanel
+          agent={undefined}
+          memories={state.recalled}
+          initialTab="memory"
+          onClose={() => setMemoryOpen(false)}
+        />
+      )}
       {selected && (
         <InspectPanel
+          memories={state.recalled}
           agent={state.agents.find((a) => a.id === selected.agentId)}
           entry={
             selected.entryId === undefined
@@ -107,6 +135,7 @@ export function AppShell() {
           onClose={() => setSelected(null)}
         />
       )}
+      {lightbox && <ImageLightbox attachment={lightbox} onClose={() => setLightbox(null)} />}
       {state.pendingApproval && (
         <ApprovalDialog approval={state.pendingApproval} onDecide={approve} />
       )}

@@ -22,6 +22,8 @@ export const OrchestrationPlanSchema = z.object({
   complexityScore: z.number().int().min(1).max(5),
   budgetCapTokens: z.number().int().positive(),
   requiresApproval: z.boolean().optional(),
+  /** Ids of long-term memories recalled for this quest (optional). */
+  recalledMemoryIds: z.array(z.string()).optional(),
   executionPlan: ExecutionPlanSchema,
 });
 
@@ -30,6 +32,7 @@ export const COUNCIL_ACTIONS = [
   "SEARCHING",
   "SPEAKING",
   "FACT_CHECKING",
+  "RECALL",
   "PAUSED",
   "FALLBACK",
   "CONSENSUS",

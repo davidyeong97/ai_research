@@ -1,3 +1,4 @@
+import { textOf } from "@/lib/council/llm";
 import { beforeAll, describe, expect, it } from "vitest";
 import { EventBus } from "@/lib/council/bus";
 import { setLLMClient } from "@/lib/council/quests";
@@ -25,7 +26,7 @@ describe("quests e2e", () => {
     (globalThis as G).__councilBus = new EventBus(db);
     setLLMClient(
       new MockLLMClient((p) =>
-        p.messages[0].content.includes("Lead Orchestrator")
+        textOf(p.messages[0].content).includes("Lead Orchestrator")
           ? JSON.stringify({ domain: "coding", complexity: 3 })
           : "a council reply",
       ),
@@ -46,8 +47,7 @@ describe("quests e2e", () => {
     const params = { params: Promise.resolve({ id: questId }) };
     const first = await readSse(await GET(new Request("http://x/s"), params));
     const n = plan.executionPlan.assignedAgents.length;
-    const factCheckEvents =
-      plan.executionPlan.maxRounds >= 2 || plan.complexityScore >= 4 ? 2 : 0;
+    const factCheckEvents = plan.executionPlan.maxRounds >= 2 || plan.complexityScore >= 4 ? 2 : 0;
     expect(first).toHaveLength(n * plan.executionPlan.maxRounds * 2 + 3 + factCheckEvents);
     expect(first.map((e) => e.id)).toEqual(first.map((_, i) => i + 1));
     expect(first.at(-1)!.event.action).toBe("DONE");

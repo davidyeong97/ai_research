@@ -1,9 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { EventBus } from "@/lib/council/bus";
 import { setLLMClient } from "@/lib/council/quests";
-import { MockLLMClient } from "@/lib/council/llm";
+import { MockLLMClient, textOf } from "@/lib/council/llm";
 import { createDb } from "@/lib/db";
 
 type G = { __councilDb?: unknown; __councilBus?: unknown };
@@ -38,15 +41,16 @@ beforeAll(async () => {
   (globalThis as G).__councilDb = db;
   (globalThis as G).__councilBus = new EventBus(db);
   const mock = new MockLLMClient((p) =>
-    p.messages[0].content.includes("Lead Orchestrator")
+    textOf(p.messages[0].content).includes("Lead Orchestrator")
       ? JSON.stringify({ domain: "coding", complexity })
       : "a council reply",
   );
   setLLMClient({
     async *streamChat(params) {
-      if (delayMs && !params.messages[0].content.includes("Lead Orchestrator")) await sleep(delayMs);
+      if (delayMs && !textOf(params.messages[0].content).includes("Lead Orchestrator")) await sleep(delayMs);
       yield* mock.streamChat(params);
     },
+    embed: (params) => mock.embed(params),
   });
   client = await connect();
 });
@@ -148,5 +152,70 @@ describe("MCP server", () => {
     const { quests } = (await call(client, "council_list", {})).structuredContent as { quests: { questId: string }[] };
     const res = await client.readResource({ uri: `council://quests/${quests[0].questId}/transcript` });
     expect((res.contents[0] as { text: string }).text).toContain("## Transcript");
+  });
+
+  describe("attachments", () => {
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+    const png = { filename: "chart.png", mimeType: "image/png", dataBase64: PNG.toString("base64") };
+    const md = { filename: "notes.md", mimeType: "text/markdown", dataBase64: Buffer.from("# Notes\nhello").toString("base64") };
+    let dir: string;
+    beforeAll(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-att-"));
+      process.env.UPLOADS_DIR = dir;
+    });
+    afterAll(() => {
+      delete process.env.UPLOADS_DIR;
+      fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("council_ask accepts png + md and reports them in status and export", async () => {
+      const r = await call(client, "council_ask", { question: "Review these", attachments: [png, md], waitSeconds: 10 });
+      expect(r.isError).toBeFalsy();
+      const names = (r.structuredContent!.attachments as { filename: string }[]).map((a) => a.filename).sort();
+      expect(names).toEqual(["chart.png", "notes.md"]);
+      expect(r.content[0].text).toContain("Attachments: ");
+      const id = r.structuredContent!.questId as string;
+      const st = await call(client, "council_status", { questId: id });
+      expect(st.structuredContent!.attachments).toHaveLength(2);
+      const ex = await call(client, "council_export", { questId: id });
+      expect(ex.content[0].text).toContain("chart.png");
+    });
+
+    it("council_start lists attachment names", async () => {
+      const r = await call(client, "council_start", { question: "Look", attachments: [md] });
+      expect(r.isError).toBeFalsy();
+      expect(r.content[0].text).toContain("notes.md");
+      expect((r.structuredContent!.attachments as unknown[]).length).toBe(1);
+    });
+
+    it("rejects unsupported types, bad base64, too many and oversize as tool errors", async () => {
+      const exe = { filename: "a.exe", mimeType: "application/octet-stream", dataBase64: Buffer.from([1, 2, 3, 0]).toString("base64") };
+      const bad = await call(client, "council_ask", { question: "x", attachments: [exe] });
+      expect(bad.isError).toBe(true);
+      expect(bad.content[0].text).toMatch(/Unsupported file type/);
+
+      const b64 = await call(client, "council_ask", { question: "x", attachments: [{ filename: "a.md", dataBase64: "!!!notbase64" }] });
+      expect(b64.isError).toBe(true);
+      expect(b64.content[0].text).toMatch(/base64/);
+
+      const many = await call(client, "council_ask", { question: "x", attachments: Array(6).fill(md) });
+      expect(many.isError).toBe(true);
+
+      vi.stubEnv("MAX_UPLOAD_MB", "0.0001"); // ~104 bytes
+      const big = await call(client, "council_ask", {
+        question: "x",
+        attachments: [{ filename: "big.md", dataBase64: Buffer.from("a".repeat(500)).toString("base64") }],
+      });
+      expect(big.isError).toBe(true);
+      expect(big.content[0].text).toMatch(/too large|Too small|invalid/i);
+    });
+
+    it("saves nothing when one attachment in a batch is invalid", async () => {
+      const before = fs.readdirSync(dir).length;
+      const exe = { filename: "a.exe", dataBase64: Buffer.from([1, 2, 3, 0]).toString("base64") };
+      const r = await call(client, "council_start", { question: "x", attachments: [md, exe] });
+      expect(r.isError).toBe(true);
+      expect(fs.readdirSync(dir).length).toBe(before);
+    });
   });
 });

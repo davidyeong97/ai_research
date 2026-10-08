@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Markdown } from "./Markdown";
 import { AVATAR_GLYPH } from "./mock-data";
-import type { AgentState, Citation, TranscriptEntry } from "@/lib/client/questReducer";
+import type {
+  AgentState,
+  Citation,
+  RecalledMemoryRef,
+  TranscriptEntry,
+} from "@/lib/client/questReducer";
 
 /** Hostname of an http(s) URL, or null when the URL is not safe to link. */
 export function safeHost(url: string): string | null {
@@ -15,8 +20,7 @@ export function safeHost(url: string): string | null {
   }
 }
 
-const FOCUSABLE =
-  'a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -54,13 +58,35 @@ export function CitationList({ citations }: { citations: Citation[] }) {
   );
 }
 
+export function MemoryList({ memories }: { memories: RecalledMemoryRef[] }) {
+  if (memories.length === 0) {
+    return <p className="text-xs text-indigo-300">No memories recalled for this quest.</p>;
+  }
+  return (
+    <ul className="space-y-2" data-testid="memory-list">
+      {memories.map((m) => (
+        <li key={m.id} className="border-2 border-black bg-black/30 p-2">
+          <span className="mb-1 inline-block border border-pink-300/60 bg-pink-950/60 px-1.5 text-[10px] uppercase text-pink-200">
+            {m.kind ?? "memory"}
+          </span>
+          <p className="whitespace-pre-wrap break-words text-sm">{m.preview}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function InspectPanel({
   agent,
   entry,
+  memories = [],
+  initialTab = "agent",
   onClose,
 }: {
   agent: AgentState | undefined;
   entry?: TranscriptEntry;
+  memories?: RecalledMemoryRef[];
+  initialTab?: "agent" | "memory";
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -69,6 +95,9 @@ export function InspectPanel({
     closeRef.current = onClose;
   }, [onClose]);
   const [thoughtOpen, setThoughtOpen] = useState(false);
+  const [tab, setTab] = useState<"agent" | "memory">(initialTab);
+  const hasAgentView = initialTab === "agent";
+  const showMemory = tab === "memory" || !hasAgentView;
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
@@ -127,7 +156,7 @@ export function InspectPanel({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label={`Inspect ${role}`}
+        aria-label={showMemory ? "Recalled memory" : `Inspect ${role}`}
         data-testid="inspect-panel"
         className="absolute inset-x-0 bottom-0 max-h-[85dvh] overflow-y-auto overscroll-contain border-t-4 border-amber-200/80 bg-indigo-950 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-sm shadow-[0_-4px_0_0_#000] motion-safe:animate-[inspect-up_150ms_ease-out] sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-[26rem] sm:max-w-full sm:border-l-4 sm:border-t-0 sm:pr-[max(0.75rem,env(safe-area-inset-right))] sm:shadow-[-4px_0_0_0_#000] sm:motion-safe:animate-[inspect-in_150ms_ease-out]"
       >
@@ -154,7 +183,28 @@ export function InspectPanel({
             ✕
           </button>
         </div>
+        {hasAgentView && memories.length > 0 && (
+          <div role="tablist" aria-label="Inspector view" className="mb-3 flex gap-1">
+            {(["agent", "memory"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="tab"
+                aria-selected={tab === t}
+                data-testid={`inspect-tab-${t}`}
+                onClick={() => setTab(t)}
+                className={`min-h-11 flex-1 border-2 border-black text-xs font-bold uppercase ${tab === t ? "bg-amber-300 text-black" : "bg-indigo-900"}`}
+              >
+                {t === "agent" ? "Agent" : `🧠 Memory (${memories.length})`}
+              </button>
+            ))}
+          </div>
+        )}
 
+        {showMemory ? (
+          <MemoryList memories={memories} />
+        ) : (
+          <>
         <dl className="mb-3 grid grid-cols-2 gap-2">
           <Stat label="Model" value={model ?? "—"} />
           <Stat label="Tokens" value={tokens.toLocaleString()} />
@@ -201,6 +251,8 @@ export function InspectPanel({
             <p className="text-xs text-indigo-300">No citations.</p>
           )}
         </section>
+          </>
+        )}
       </div>
     </div>
   );
