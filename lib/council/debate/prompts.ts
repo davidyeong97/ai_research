@@ -63,6 +63,8 @@ export interface PromptContext {
   /** Fact-checker's verdict on round 1 claims (untrusted data). */
   factCheck?: string;
   attachments?: PromptAttachments;
+  /** Pre-fenced long-term memory block (round 1 only; untrusted). */
+  recalled?: string;
 }
 
 export interface SynthesisContext {
@@ -110,7 +112,10 @@ export const buildAgentPrompt: PromptBuilder = (ctx) => {
       },
       {
         role: "user",
-        content: userContent(att ? `${query}\n\n${att}` : query, ctx.attachments?.media),
+        content: userContent(
+          [query, att, ctx.recalled].filter((x) => x).join("\n\n"),
+          ctx.attachments?.media,
+        ),
       },
     ];
   }
