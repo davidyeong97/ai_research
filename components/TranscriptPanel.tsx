@@ -5,7 +5,8 @@ import { Markdown } from "./Markdown";
 import { ExportControl } from "./ExportControl";
 import { FinalAnswer } from "./FinalAnswer";
 import { safeHost } from "./InspectPanel";
-import type { InspectSelection, TranscriptEntry } from "@/lib/client/questReducer";
+import { AttachmentList } from "./Attachments";
+import type { AttachmentRef, InspectSelection, TranscriptEntry } from "@/lib/client/questReducer";
 
 const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
   message: "border-amber-200/60 bg-indigo-950/80",
@@ -13,6 +14,8 @@ const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
   final: "border-amber-300 bg-amber-300/20 shadow-[3px_3px_0_0_#000]",
   director: "border-sky-300 bg-sky-950/70 text-sky-50",
   error: "border-red-500 bg-red-950/60 text-red-100",
+  quest: "border-emerald-300/70 bg-emerald-950/50 text-emerald-50",
+  digest: "border-violet-300/70 bg-violet-950/60 text-violet-50",
 };
 
 export function TranscriptPanel({
@@ -20,11 +23,13 @@ export function TranscriptPanel({
   finalAnswer,
   questId,
   onInspect,
+  onOpenAttachment,
 }: {
   entries: TranscriptEntry[];
   finalAnswer?: string | null;
   questId?: string | null;
   onInspect?: (sel: InspectSelection) => void;
+  onOpenAttachment?: (a: AttachmentRef) => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -51,7 +56,11 @@ export function TranscriptPanel({
                 ? "final-answer"
                 : e.kind === "director"
                   ? "director-entry"
-                  : "transcript-entry"
+                  : e.kind === "quest"
+                    ? "quest-entry"
+                    : e.kind === "digest"
+                      ? "digest-entry"
+                      : "transcript-entry"
             }
             onClick={
               e.kind === "message" && onInspect
@@ -69,11 +78,20 @@ export function TranscriptPanel({
                   ? "🏆 Final answer"
                   : e.kind === "director"
                     ? `🎙 Director · R${e.round}`
-                    : `R${e.round} · ${e.agentId}`}
+                    : e.kind === "quest"
+                      ? "🗡 Your quest"
+                      : e.kind === "digest"
+                        ? "📎 Attachment digest"
+                        : `R${e.round} · ${e.agentId}`}
               </span>
               <span>{e.action}</span>
             </div>
-            {e.kind === "status" || e.kind === "error" ? (
+            {e.kind === "quest" ? (
+              <>
+                <p className="whitespace-pre-wrap break-words">{e.text}</p>
+                <AttachmentList attachments={e.attachments ?? []} onOpen={onOpenAttachment} />
+              </>
+            ) : e.kind === "status" || e.kind === "error" ? (
               <p className="whitespace-pre-wrap break-words">{e.text}</p>
             ) : (
               <Markdown>{e.text}</Markdown>
