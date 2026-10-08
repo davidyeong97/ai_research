@@ -6,6 +6,7 @@ import { BudgetExceeded, BudgetTracker, CostCapExceeded, costCapFromEnv } from "
 import type { EventBus } from "../bus";
 import { cacheKey, cacheGet, cacheSet, purgeExpired } from "../cache";
 import type { ChatMessage, LLMClient, LLMUsage } from "../llm";
+import { estimatePromptTokens } from "../llm";
 import { LEAD_MODELS } from "../roster";
 import { sanitizeText } from "./sanitize";
 import {
@@ -127,7 +128,7 @@ export async function runDebate(
     webSearch?: { maxResults: number };
   }): Promise<string> {
     const { round, agentId, models, messages, maxTokens } = args;
-    const promptEstimate = Math.ceil(messages.reduce((n, m) => n + m.content.length, 0) / 4);
+    const promptEstimate = estimatePromptTokens(messages);
     budget.assertCanSpend(maxTokens + promptEstimate, agentId);
 
     let text = "";

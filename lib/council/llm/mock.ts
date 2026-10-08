@@ -1,3 +1,4 @@
+import { textOf } from "./types";
 import type { Citation, LLMChunk, LLMClient, LLMUsage, StreamChatParams } from "./types";
 
 export interface MockResponse {
@@ -53,7 +54,7 @@ export class MockLLMClient implements LLMClient {
       type: "usage",
       usage: {
         promptTokens:
-          res.usage?.promptTokens ?? approx(params.messages.map((m) => m.content).join("")),
+          res.usage?.promptTokens ?? approx(params.messages.map((m) => textOf(m.content)).join("")),
         completionTokens: res.usage?.completionTokens ?? approx(text),
         costUsd: res.usage?.costUsd ?? 0,
         modelUsed,

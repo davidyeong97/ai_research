@@ -1,3 +1,4 @@
+import { textOf } from "@/lib/council/llm";
 import { beforeAll, describe, expect, it } from "vitest";
 import { EventBus } from "@/lib/council/bus";
 import { MockLLMClient } from "@/lib/council/llm";
@@ -23,7 +24,7 @@ describe("GET /api/quests/[id]/export", () => {
     (globalThis as G).__councilBus = new EventBus(db);
     setLLMClient(
       new MockLLMClient((p) =>
-        p.messages[0].content.includes("Lead Orchestrator")
+        textOf(p.messages[0].content).includes("Lead Orchestrator")
           ? JSON.stringify({ domain: "coding", complexity: 3 })
           : "reply text",
       ),
