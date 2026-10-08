@@ -40,6 +40,21 @@ function toMarkdown(
     }
     out.push("");
   }
+  const recalled = events.filter((e) => e.action === "RECALL");
+  if (recalled.length) {
+    out.push("## Recalled memory", "");
+    for (const e of recalled) {
+      const d = (e.data ?? {}) as Record<string, unknown>;
+      const ids = Array.isArray(d.ids) ? d.ids : [];
+      const kinds = Array.isArray(d.kinds) ? d.kinds : [];
+      const previews = Array.isArray(d.preview) ? d.preview : [];
+      previews.forEach((p, i) => {
+        const text = String(p).replace(/\s+/g, " ").trim();
+        out.push(`- [${str(kinds[i]) ?? "memory"}] ${text}${str(ids[i]) ? ` (${ids[i]})` : ""}`);
+      });
+    }
+    out.push("");
+  }
   out.push("## Transcript", "");
   let round = 0;
   let final = session.outcome ?? undefined;
@@ -125,7 +140,17 @@ export async function GET(
       .where(eq(schema.agentMessages.sessionId, id))
       .orderBy(asc(schema.agentMessages.id))
       .all();
-    return new Response(JSON.stringify({ session, plan: plan ?? null, attachments, events, agentMessages }, null, 2), {
+    const recalledMemoryIds = [
+      ...new Set(
+        events
+          .filter((e) => e.action === "RECALL")
+          .flatMap((e) => {
+            const ids = (e.data as Record<string, unknown> | undefined)?.ids;
+            return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+          }),
+      ),
+    ];
+    return new Response(JSON.stringify({ session, plan: plan ?? null, attachments, recalledMemoryIds, events, agentMessages }, null, 2), {
       headers: { ...headers, "Content-Type": "application/json; charset=utf-8" },
     });
   }

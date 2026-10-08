@@ -1,7 +1,6 @@
 import type { CouncilAction, CouncilEvent, OrchestrationPlan } from "@/lib/shared";
 
-/** RECALL is a one-shot event, never an agent status (later bead may change this). */
-export type AgentStatus = Exclude<CouncilAction, "RECALL"> | "IDLE";
+export type AgentStatus = CouncilAction | "IDLE";
 
 export interface AgentState {
   id: string;
@@ -35,7 +34,7 @@ export interface InspectSelection {
 }
 
 export type TranscriptKind =
-  "message" | "status" | "final" | "error" | "director" | "quest" | "digest";
+  "message" | "status" | "final" | "error" | "director" | "quest" | "digest" | "memory";
 
 export interface AttachmentRef {
   id: string;
@@ -55,6 +54,12 @@ export interface PendingApproval {
   attachments: AttachmentRef[];
 }
 
+export interface RecalledMemoryRef {
+  id: string;
+  kind?: string;
+  preview: string;
+}
+
 export interface TranscriptEntry {
   /** Event id (seq). */
   id: number;
@@ -70,6 +75,9 @@ export interface TranscriptEntry {
   costUsd?: number;
   latencyMs?: number;
   attachments?: AttachmentRef[];
+  /** Full injected (fenced) memory block, for kind "memory". */
+  block?: string;
+  memories?: RecalledMemoryRef[];
 }
 
 export type QuestPhase = "idle" | "running" | "done" | "error";
@@ -84,6 +92,8 @@ export interface QuestState {
   pendingApproval: PendingApproval | null;
   agents: AgentState[];
   transcript: TranscriptEntry[];
+  /** Memories recalled for this quest (from RECALL events). */
+  recalled: RecalledMemoryRef[];
   finalAnswer: string | null;
   lastEventId: number;
   /** Highest round seen across events (0 before any). */
@@ -106,6 +116,7 @@ export const initialQuestState: QuestState = {
   pendingApproval: null,
   agents: [],
   transcript: [],
+  recalled: [],
   finalAnswer: null,
   lastEventId: 0,
   currentRound: 0,
@@ -228,13 +239,30 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
       return next;
     }
     case "RECALL": {
-      // Minimal rendering; richer memory UI is a later bead.
       const count = num(d.count) ?? 0;
-      const preview = Array.isArray(d.preview)
-        ? d.preview.filter((p): p is string => typeof p === "string").join(" | ")
-        : (str(d.preview) ?? "");
-      const text = `Recalled ${count} ${count === 1 ? "memory" : "memories"}${preview ? `: ${preview}` : ""}`;
-      next.transcript = [...state.transcript, entry("status", text)];
+      const previews = Array.isArray(d.preview)
+        ? d.preview.filter((p): p is string => typeof p === "string")
+        : str(d.preview)
+          ? [str(d.preview) as string]
+          : [];
+      const ids = Array.isArray(d.ids) ? d.ids.filter((x): x is string => typeof x === "string") : [];
+      const kinds = Array.isArray(d.kinds) ? d.kinds : [];
+      const memories: RecalledMemoryRef[] = previews.map((preview, i) => ({
+        id: ids[i] ?? `recalled-${e.id}-${i}`,
+        kind: str(kinds[i]),
+        preview,
+      }));
+      const joined = previews.join(" | ");
+      const short = joined.length > 140 ? `${joined.slice(0, 139)}…` : joined;
+      const text = `🧠 Council recalled ${count} ${count === 1 ? "memory" : "memories"}${short ? `: ${short}` : ""}`;
+      next.recalled = [...state.recalled, ...memories];
+      next.transcript = [
+        ...state.transcript,
+        { ...entry("memory", text), block: str(d.block), memories },
+      ];
+      if (state.agents.some((a) => a.id === e.agentId)) {
+        next.agents = patchAgent(state.agents, e.agentId, (a) => ({ ...a, status: "RECALL" }));
+      }
       return next;
     }
     case "PAUSED": {

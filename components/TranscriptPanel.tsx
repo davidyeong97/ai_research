@@ -16,6 +16,7 @@ const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
   error: "border-red-500 bg-red-950/60 text-red-100",
   quest: "border-emerald-300/70 bg-emerald-950/50 text-emerald-50",
   digest: "border-violet-300/70 bg-violet-950/60 text-violet-50",
+  memory: "border-pink-300/70 bg-pink-950/50 text-pink-50",
 };
 
 export function TranscriptPanel({
@@ -60,6 +61,8 @@ export function TranscriptPanel({
                     ? "quest-entry"
                     : e.kind === "digest"
                       ? "digest-entry"
+                      : e.kind === "memory"
+                        ? "memory-entry"
                       : "transcript-entry"
             }
             onClick={
@@ -82,6 +85,8 @@ export function TranscriptPanel({
                       ? "🗡 Your quest"
                       : e.kind === "digest"
                         ? "📎 Attachment digest"
+                        : e.kind === "memory"
+                          ? "🧠 Memory"
                         : `R${e.round} · ${e.agentId}`}
               </span>
               <span>{e.action}</span>
@@ -90,6 +95,20 @@ export function TranscriptPanel({
               <>
                 <p className="whitespace-pre-wrap break-words">{e.text}</p>
                 <AttachmentList attachments={e.attachments ?? []} onOpen={onOpenAttachment} />
+              </>
+            ) : e.kind === "memory" ? (
+              <>
+                <p className="whitespace-pre-wrap break-words">{e.text}</p>
+                {e.block && (
+                  <details className="mt-1" data-testid="memory-details">
+                    <summary className="min-h-8 cursor-pointer text-[10px] uppercase text-pink-200 underline">
+                      Show injected block
+                    </summary>
+                    <pre className="mt-1 max-h-60 overflow-auto whitespace-pre-wrap break-words border border-black bg-black/40 p-2 text-[11px]">
+                      {e.block}
+                    </pre>
+                  </details>
+                )}
               </>
             ) : e.kind === "status" || e.kind === "error" ? (
               <p className="whitespace-pre-wrap break-words">{e.text}</p>
