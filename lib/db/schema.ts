@@ -7,6 +7,7 @@ export const sessions = sqliteTable("sessions", {
   totalTokens: integer("total_tokens").notNull().default(0),
   totalCostUsd: real("total_cost_usd").notNull().default(0),
   outcome: text("outcome"),
+  source: text("source").notNull().default("web"),
   createdAt: integer("created_at").notNull(),
 });
 

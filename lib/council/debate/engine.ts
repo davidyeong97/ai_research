@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "../../db";
 import { schema } from "../../db";
 import type { OrchestrationPlan } from "../../shared";
+import { QuestAborted } from "../control";
 import { BudgetExceeded, BudgetTracker, CostCapExceeded, costCapFromEnv } from "../budget";
 import type { EventBus } from "../bus";
 import { cacheKey, cacheGet, cacheSet, purgeExpired } from "../cache";
@@ -53,6 +54,8 @@ export interface DebateOptions {
   attachments?: AttachmentContext;
   /** Fenced long-term memory block injected into every agent's round-1 prompt only. */
   recalled?: string;
+  /** Per-quest USD cap; defaults to MAX_COST_USD_PER_QUEST. Callers may only lower it. */
+  costCapUsd?: number;
 }
 
 const AGENT_MAX_TOKENS = 400;
@@ -120,7 +123,7 @@ export async function runDebate(
   const summaryMax = opts.summaryMaxTokens ?? SUMMARY_MAX_TOKENS;
   const synthMax = opts.synthesisMaxTokens ?? SYNTHESIS_MAX_TOKENS;
 
-  const budget = new BudgetTracker(plan.budgetCapTokens, costCapFromEnv());
+  const budget = new BudgetTracker(plan.budgetCapTokens, opts.costCapUsd ?? costCapFromEnv());
   const agents: DebateAgent[] = plan.executionPlan.assignedAgents;
   const maxRounds = Math.max(1, plan.executionPlan.maxRounds);
   const searchEnabled = plan.executionPlan.toolsAllowed.includes("web_search");
@@ -418,6 +421,20 @@ export async function runDebate(
       totalCostUsd,
     });
   } catch (e) {
+    if (e instanceof QuestAborted && e.reason === "cancelled") {
+      d.db
+        .update(schema.sessions)
+        .set({ status: "cancelled", totalTokens: budget.used, totalCostUsd })
+        .where(eq(schema.sessions.id, questId))
+        .run();
+      emit(currentRound, "lead", "DONE", 0, {
+        cancelled: true,
+        reason: "cancelled",
+        totalTokens: budget.used,
+        totalCostUsd,
+      });
+      return;
+    }
     const exceeded = e instanceof BudgetExceeded;
     const costExceeded = e instanceof CostCapExceeded;
     d.db

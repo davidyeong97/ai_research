@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { MAX_ATTACHMENTS, UploadError } from "@/lib/council/attachments";
-import { createQuest } from "@/lib/council/quests";
+import { ServiceError, startQuest } from "@/lib/council/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,14 +25,16 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "query is required" }, { status: 400 });
   }
   try {
-    const { questId, plan, attachments } = await createQuest(
-      body.data.query,
-      {},
-      { attachmentIds, remember: body.data.remember },
-    );
+    const { questId, plan, attachments } = await startQuest({
+      query: body.data.query,
+      source: "web",
+      attachmentIds,
+      remember: body.data.remember,
+    });
     return Response.json({ questId, plan, attachments }, { status: 201 });
   } catch (e) {
     if (e instanceof UploadError) return Response.json({ error: e.message }, { status: e.status });
+    if (e instanceof ServiceError) return Response.json({ error: e.message }, { status: e.httpStatus });
     return Response.json({ error: e instanceof Error ? e.message : "failed" }, { status: 500 });
   }
 }
