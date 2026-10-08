@@ -17,7 +17,13 @@ export function runningCost(s: QuestState): number {
   return s.agents.reduce((n, a) => n + a.costUsd, 0);
 }
 
-export function StatsBar({ state }: { state: QuestState }) {
+export function StatsBar({
+  state,
+  onOpenMemory,
+}: {
+  state: QuestState;
+  onOpenMemory?: () => void;
+}) {
   if (state.phase === "idle" && !state.plan) return null;
   const cap = state.plan?.budgetCapTokens ?? 0;
   const used =
@@ -60,6 +66,19 @@ export function StatsBar({ state }: { state: QuestState }) {
       >
         {phase}
       </span>
+      {state.recalled.length > 0 || state.transcript.some((t) => t.kind === "memory") ? (
+        <button
+          type="button"
+          data-testid="stats-memory"
+          aria-label={`Memory: ${state.recalled.length} recalled`}
+          title="Memories recalled for this quest"
+          onClick={onOpenMemory}
+          className="flex min-h-11 min-w-11 flex-none items-center justify-center gap-0.5 border border-black bg-pink-300 px-1.5 text-black"
+        >
+          <span aria-hidden>🧠</span>
+          <span>{state.recalled.length}</span>
+        </button>
+      ) : null}
       <SoundToggle />
     </div>
   );

@@ -7,6 +7,7 @@ export const STATUS_LABELS: Record<AgentStatus, string> = {
   SEARCHING: "Searching Web 🌐",
   SPEAKING: "Debating ⚔️",
   FACT_CHECKING: "Fact-Checking 🔍",
+  RECALL: "Recalling 🧠",
   CONSENSUS: "Consensus Achieved ✅",
   FALLBACK: "Swapped In 🔄",
   PAUSED: "Paused ⏸️",

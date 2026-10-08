@@ -57,6 +57,7 @@ describe("GET /api/quests/[id]/export", () => {
       "attachments",
       "events",
       "plan",
+      "recalledMemoryIds",
       "session",
     ]);
     expect(body.session.id).toBe(questId);
@@ -65,5 +66,34 @@ describe("GET /api/quests/[id]/export", () => {
 
     expect((await get("nope")).status).toBe(404);
     expect((await get(questId, "xml")).status).toBe(400);
+  });
+
+  it("includes recalled memory in md and json", async () => {
+    const db = createDb(":memory:");
+    const bus = new EventBus(db);
+    (globalThis as G).__councilDb = db;
+    (globalThis as G).__councilBus = bus;
+    setLLMClient(
+      new MockLLMClient((p) =>
+        textOf(p.messages[0].content).includes("Lead Orchestrator")
+          ? JSON.stringify({ domain: "coding", complexity: 3 })
+          : "reply text",
+      ),
+    );
+    const { questId, done } = await createQuest("Memory q", {});
+    await done;
+    bus.publish({
+      questId,
+      round: 0,
+      agentId: "lead",
+      action: "RECALL",
+      tokensUsed: 0,
+      data: { count: 1, ids: ["m1"], kinds: ["preference"], preview: ["likes concise answers"] },
+    });
+    const text = await (await get(questId)).text();
+    expect(text).toContain("## Recalled memory");
+    expect(text).toContain("- [preference] likes concise answers (m1)");
+    const body = await (await get(questId, "json")).json();
+    expect(body.recalledMemoryIds).toEqual(["m1"]);
   });
 });
