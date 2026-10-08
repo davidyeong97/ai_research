@@ -8,6 +8,7 @@ import { ArenaPanel } from "./ArenaPanel";
 import { TranscriptPanel } from "./TranscriptPanel";
 import type { AttachmentRef, InspectSelection } from "@/lib/client/questReducer";
 import { ImageLightbox } from "./Attachments";
+import { MemoryPanel } from "./MemoryPanel";
 import { InspectPanel } from "./InspectPanel";
 import { useQuestStream } from "@/hooks/useQuestStream";
 
@@ -21,6 +22,7 @@ export function AppShell() {
   const [lightbox, setLightbox] = useState<AttachmentRef | null>(null);
   const [selected, setSelected] = useState<InspectSelection | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [managerOpen, setManagerOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("arena");
   const { state, starting, uploading, connectionError, start, control, approve } = useQuestStream();
   const [unread, setUnread] = useState(false);
@@ -42,8 +44,17 @@ export function AppShell() {
   };
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-indigo-950 pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] font-mono text-indigo-50">
-      <header className="flex-none border-b-4 border-amber-200/80 px-3 py-2 text-center text-lg font-bold tracking-widest text-amber-300">
+      <header className="relative flex-none border-b-4 border-amber-200/80 px-3 py-2 text-center text-lg font-bold tracking-widest text-amber-300">
         ⚔ COUNCIL ⚔
+        <button
+          type="button"
+          data-testid="memory-button"
+          aria-label="Open memory manager"
+          onClick={() => setManagerOpen(true)}
+          className="absolute right-2 top-1/2 min-h-11 min-w-11 -translate-y-1/2 border-2 border-black bg-pink-300 px-2 text-xs tracking-normal text-black"
+        >
+          🧠 Memory
+        </button>
       </header>
       <StatsBar state={state} onOpenMemory={() => setMemoryOpen(true)} />
       <main className="flex min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:divide-x-4 lg:divide-amber-200/80">
@@ -79,6 +90,9 @@ export function AppShell() {
         paused={state.paused}
         onControl={control}
       />
+      {managerOpen && (
+        <MemoryPanel questId={state.questId} onClose={() => setManagerOpen(false)} />
+      )}
       {!selected && memoryOpen && (
         <InspectPanel
           agent={undefined}

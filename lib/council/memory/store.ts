@@ -302,10 +302,16 @@ export function prune(deps: MemoryDeps = {}): number {
   return victims.length;
 }
 
+export class DuplicateMemoryError extends Error {
+  constructor(public readonly existingId: string) {
+    super("A similar memory already exists");
+  }
+}
+
 export async function updateMemory(
   id: string,
   patch: { content?: string; pinned?: boolean; kind?: MemoryKind; confidence?: number },
-  deps: MemoryDeps = {},
+  deps: MemoryDeps & { rejectDuplicates?: boolean } = {},
 ): Promise<Memory | null> {
   const sqlite = sqliteOf(deps);
   const existing = getMemory(id, deps);
@@ -328,6 +334,21 @@ export async function updateMemory(
   let vec: Float32Array | null | undefined;
   if (content && content !== existing.content) {
     vec = await embedText(content, { llm: deps.llm });
+    if (deps.rejectDuplicates) {
+      const exact = sqlite
+        .prepare("SELECT id FROM memories WHERE lower(trim(content)) = lower(?) AND id != ? LIMIT 1")
+        .get(content, id) as { id: string } | undefined;
+      let dup = exact?.id ?? null;
+      if (!dup && vec) {
+        for (const [oid, v] of loadVectors(sqlite)) {
+          if (oid !== id && cosine(vec, v) >= DEDUPE_COSINE) {
+            dup = oid;
+            break;
+          }
+        }
+      }
+      if (dup) throw new DuplicateMemoryError(dup);
+    }
     sets.push("content = ?", "embedding = ?");
     params.push(content, vec ? vectorToBlob(vec) : null);
   }
