@@ -1,3 +1,4 @@
+import { textOf } from "@/lib/council/llm";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createDb, schema } from "../../db";
@@ -100,13 +101,13 @@ describe("runDebate", () => {
     let n = 0;
     const llm: MockLLMClient = new MockLLMClient((p): string => {
       const sys = p.messages[0].content;
-      if (sys.includes("Summarize the debate")) return "SUMMARY-TEXT";
+      if (textOf(sys).includes("Summarize the debate")) return "SUMMARY-TEXT";
       return `R${p.messages.length}-${++n}-UNIQUE`;
     });
     const plan = makePlan(4);
     const { events, rows } = await run(plan, llm);
     const summaryCalls = llm.calls.filter((c) =>
-      c.messages[0].content.includes("Summarize the debate"),
+      textOf(c.messages[0].content).includes("Summarize the debate"),
     );
     expect(summaryCalls).toHaveLength(2); // before rounds 3 and 4
     expect(summaryCalls[0].models).toEqual(LEAD_MODELS);
@@ -227,7 +228,7 @@ describe("runDebate web search", () => {
 describe("runDebate fact-check", () => {
   it("emits FACT_CHECKING, records budget, persists, and feeds verdict to round 2", async () => {
     const llm = new MockLLMClient((p) =>
-      p.messages[0].content.includes("fact-checker") ? "VERDICT-XYZ" : "claim",
+      textOf(p.messages[0].content).includes("fact-checker") ? "VERDICT-XYZ" : "claim",
     );
     const { events, rows } = await run(makePlan(2), llm);
     const idx = events.findIndex((e) => e.action === "FACT_CHECKING");

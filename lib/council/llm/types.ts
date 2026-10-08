@@ -1,8 +1,29 @@
 export type ChatRole = "system" | "user" | "assistant";
 
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; data: Uint8Array | string; mediaType: string }
+  | { type: "file"; data: Uint8Array | string; mediaType: "application/pdf"; filename: string };
+
+export type MessageContent = string | ContentPart[];
+
 export interface ChatMessage {
   role: ChatRole;
-  content: string;
+  /** Plain string (text-only) or multimodal parts. `data` strings are base64. */
+  content: MessageContent;
+}
+
+/** Concatenated text of a message content (media parts are omitted). */
+export function textOf(content: MessageContent): string {
+  if (typeof content === "string") return content;
+  return content.map((p) => (p.type === "text" ? p.text : "")).join("");
+}
+
+/** True when any message carries an image or file part. */
+export function hasMedia(messages: ChatMessage[]): boolean {
+  return messages.some(
+    (m) => typeof m.content !== "string" && m.content.some((p) => p.type !== "text"),
+  );
 }
 
 export type ReasoningOption =

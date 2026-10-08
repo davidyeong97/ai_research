@@ -1,3 +1,4 @@
+import { textOf, type MessageContent } from "@/lib/council/llm";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,8 +27,8 @@ const origPw = process.env.APP_PASSWORD;
 const origCost = process.env.MAX_COST_USD_PER_QUEST;
 
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
-const isAgentCall = (p: { messages: { content: string }[] }) =>
-  p.messages[0].content.includes("council of AI experts debating");
+const isAgentCall = (p: { messages: { content: MessageContent }[] }) =>
+  textOf(p.messages[0].content).includes("council of AI experts debating");
 
 async function waitFor(cond: () => boolean, label: string, timeoutMs = 5000) {
   const start = Date.now();
@@ -44,7 +45,7 @@ function setup(opts: { complexity: number; domain?: string; reply?: () => MockRe
   (globalThis as G).__councilDb = db;
   (globalThis as G).__councilBus = bus;
   llm = new MockLLMClient((p) =>
-    p.messages[0].content.includes("Lead Orchestrator")
+    textOf(p.messages[0].content).includes("Lead Orchestrator")
       ? JSON.stringify({ domain: opts.domain ?? "coding", complexity: opts.complexity })
       : (opts.reply?.() ?? "a council reply"),
   );
@@ -219,7 +220,7 @@ describe("full quest flow (mock LLM)", () => {
     expect(user).toHaveLength(1);
     expect(String(user[0].data.message)).toContain("Focus on latency");
     expect(
-      llm.calls.filter(isAgentCall).some((c) => c.messages.at(-1)!.content.includes("Focus on latency")),
+      llm.calls.filter(isAgentCall).some((c) => textOf(c.messages.at(-1)!.content).includes("Focus on latency")),
     ).toBe(true);
     expect((await control(questId, { action: "pause" })).status).toBe(409);
   });
