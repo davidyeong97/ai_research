@@ -7,6 +7,7 @@ import { runDebate } from "./debate";
 import { buildAgentPrompt } from "./debate/prompts";
 import { costCapFromEnv } from "./budget";
 import { OpenRouterClient, type LLMClient } from "./llm";
+import { extractMemories } from "./memory/extract";
 import { LeadOrchestrator } from "./orchestrator";
 import { UploadError, linkToSession, resolveUnlinkedAttachments } from "./attachments";
 import { buildAttachmentContext, type AttachmentMeta } from "./debate/attachment-context";
@@ -15,6 +16,8 @@ export const DEFAULT_ATTACHMENT_QUERY = "Analyze the attached file(s).";
 
 export interface CreateQuestOptions {
   attachmentIds?: string[];
+  /** false opts this quest out of long-term memory extraction. Default true. */
+  remember?: boolean;
 }
 
 export interface QuestDeps {
@@ -153,7 +156,12 @@ export async function createQuest(
       });
     });
   }
-  const done = flow.catch(() => undefined).finally(() => dropControl(questId));
+  const done = flow
+    .catch(() => undefined)
+    // Separate post-quest step: only extracts when the session ended "done"; never throws.
+    .then(() => extractMemories(questId, { db, llm }, { remember: options.remember }))
+    .then(() => undefined)
+    .finally(() => dropControl(questId));
   return { questId, plan, done, query, attachments };
 }
 

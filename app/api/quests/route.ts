@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 const BodySchema = z.object({
   query: z.string().trim().max(4000).optional().default(""),
   attachmentIds: z.array(z.string().min(1).max(100)).max(MAX_ATTACHMENTS).optional(),
+  remember: z.boolean().optional(),
 });
 
 export async function POST(req: Request): Promise<Response> {
@@ -27,7 +28,7 @@ export async function POST(req: Request): Promise<Response> {
     const { questId, plan, attachments } = await createQuest(
       body.data.query,
       {},
-      { attachmentIds },
+      { attachmentIds, remember: body.data.remember },
     );
     return Response.json({ questId, plan, attachments }, { status: 201 });
   } catch (e) {
