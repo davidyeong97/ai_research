@@ -1,6 +1,7 @@
 import { sanitizeText, wrapDirectorGuidance } from "./debate/sanitize";
 import type { CheckpointContext, DebateOptions } from "./debate/engine";
 import type { EventBus } from "./bus";
+import type { ChatMessage } from "./llm";
 
 /** Abort pauses / approval waits after 30 minutes. */
 export const CONTROL_TIMEOUT_MS = 30 * 60 * 1000;
@@ -121,7 +122,7 @@ export class QuestControl {
   }
 
   /** Wraps a prompt builder so this round's guidance reaches every agent. */
-  wrapPromptBuilder<C extends { round: number }, M extends { role: string; content: string }>(
+  wrapPromptBuilder<C extends { round: number }, M extends ChatMessage>(
     base: (ctx: C) => M[],
   ): (ctx: C) => M[] {
     return (ctx) => {
@@ -133,7 +134,14 @@ export class QuestControl {
         g.map((t) => wrapDirectorGuidance(t, { maxChars: MAX_GUIDANCE_CHARS })).join("\n");
       const out = messages.slice();
       const i = out.length - 1;
-      out[i] = { ...out[i], content: `${out[i].content}\n\n${block}` };
+      const last = out[i].content;
+      out[i] = {
+        ...out[i],
+        content:
+          typeof last === "string"
+            ? `${last}\n\n${block}`
+            : [...last, { type: "text" as const, text: `\n\n${block}` }],
+      };
       return out;
     };
   }

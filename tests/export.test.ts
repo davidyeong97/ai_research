@@ -1,3 +1,4 @@
+import { textOf } from "@/lib/council/llm";
 import { beforeAll, describe, expect, it } from "vitest";
 import { EventBus } from "@/lib/council/bus";
 import { MockLLMClient } from "@/lib/council/llm";
@@ -23,7 +24,7 @@ describe("GET /api/quests/[id]/export", () => {
     (globalThis as G).__councilBus = new EventBus(db);
     setLLMClient(
       new MockLLMClient((p) =>
-        p.messages[0].content.includes("Lead Orchestrator")
+        textOf(p.messages[0].content).includes("Lead Orchestrator")
           ? JSON.stringify({ domain: "coding", complexity: 3 })
           : "reply text",
       ),
@@ -46,7 +47,7 @@ describe("GET /api/quests/[id]/export", () => {
     const js = await get(questId, "json");
     expect(js.headers.get("content-disposition")).toContain(`council-${questId}.json`);
     const body = await js.json();
-    expect(Object.keys(body).sort()).toEqual(["agentMessages", "events", "plan", "session"]);
+    expect(Object.keys(body).sort()).toEqual(["agentMessages", "attachments", "events", "plan", "session"]);
     expect(body.session.id).toBe(questId);
     expect(body.events.length).toBeGreaterThan(0);
     expect(body.agentMessages.length).toBeGreaterThan(0);

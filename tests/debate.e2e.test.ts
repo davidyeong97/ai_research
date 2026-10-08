@@ -1,3 +1,4 @@
+import { textOf, type MessageContent } from "@/lib/council/llm";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -18,10 +19,10 @@ const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const jsonReq = (body: unknown) =>
   new Request("http://x", { method: "POST", body: JSON.stringify(body) });
 const tick = (ms = 20) => new Promise((r) => setTimeout(r, ms));
-const isAgentCall = (p: { messages: { content: string }[] }) =>
-  p.messages[0].content.includes("council of AI experts debating");
-const isSummaryCall = (p: { messages: { content: string }[] }) =>
-  p.messages[0].content.includes("Summarize the debate");
+const isAgentCall = (p: { messages: { content: MessageContent }[] }) =>
+  textOf(p.messages[0].content).includes("council of AI experts debating");
+const isSummaryCall = (p: { messages: { content: MessageContent }[] }) =>
+  textOf(p.messages[0].content).includes("Summarize the debate");
 
 async function waitFor(cond: () => boolean, label: string, timeoutMs = 5000) {
   const start = Date.now();
@@ -37,7 +38,7 @@ function setup(complexity: number, agentResponse?: () => MockResponse | string) 
   (globalThis as G).__councilDb = db;
   (globalThis as G).__councilBus = bus;
   llm = new MockLLMClient((p) =>
-    p.messages[0].content.includes("Lead Orchestrator")
+    textOf(p.messages[0].content).includes("Lead Orchestrator")
       ? JSON.stringify({ domain: "coding", complexity })
       : (agentResponse?.() ?? "a council reply"),
   );
@@ -187,8 +188,8 @@ describe("Phase 2 debate e2e", () => {
     const agentCalls = inner.calls.filter(isAgentCall);
     expect(agentCalls).toHaveLength(n * 2);
     const has = (c: (typeof agentCalls)[number]) =>
-      c.messages.at(-1)!.content.includes("Director guidance from the user") &&
-      c.messages.at(-1)!.content.includes("Prioritise latency");
+      textOf(c.messages.at(-1)!.content).includes("Director guidance from the user") &&
+      textOf(c.messages.at(-1)!.content).includes("Prioritise latency");
     expect(agentCalls.slice(0, n).some(has)).toBe(false);
     expect(agentCalls.slice(n).every(has)).toBe(true);
   });

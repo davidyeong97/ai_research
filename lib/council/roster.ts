@@ -1,4 +1,5 @@
 import type { AVATARS } from "@/lib/shared";
+import { supportsPdf, supportsVision } from "./llm/capabilities";
 
 export type Domain = "coding" | "science" | "creative" | "casual" | "reasoning";
 export const DOMAINS: readonly Domain[] = ["coding", "science", "creative", "casual", "reasoning"];
@@ -73,4 +74,12 @@ export function planShape(complexity: number): {
   if (complexity <= 2) return { minAgents: 1, maxAgents: 2, rounds: 1 };
   if (complexity <= 4) return { minAgents: 2, maxAgents: 3, rounds: 2 };
   return { minAgents: 3, maxAgents: 4, rounds: 3 };
+}
+
+/** Lead models usable for multimodal steps (vision-capable, and PDF-capable when needed). */
+export function multimodalLeadModels(needPdf = false): string[] {
+  const strict = LEAD_MODELS.filter((m) => supportsVision(m) && (!needPdf || supportsPdf(m)));
+  if (strict.length) return strict;
+  const vision = LEAD_MODELS.filter(supportsVision);
+  return vision.length ? vision : [LEAD_MODELS[0]];
 }
