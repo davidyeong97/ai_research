@@ -11,9 +11,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "mcp:token": "node scripts/mcp-token.mjs",
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@openrouter/ai-sdk-provider": "^3.1.0",
     "ai": "^7.0.128",
     "better-sqlite3": "^13.0.3",

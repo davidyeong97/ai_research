@@ -1,0 +1,22 @@
+// Merge into ~/.openclaw/openclaw.json (JSON5).
+// Export the token in the Gateway's environment: COUNCIL_MCP_TOKEN=<value of MCP_TOKEN on the Council host>
+{
+  mcp: {
+    servers: {
+      council: {
+        // Same machine: http://127.0.0.1:3000/api/mcp
+        // Another machine over Tailscale/VPN: http://<host>:3000/api/mcp (or https via `tailscale serve`)
+        url: "http://127.0.0.1:3000/api/mcp",
+        transport: "streamable-http",
+        enabled: true,
+        headers: {
+          Authorization: "Bearer ${COUNCIL_MCP_TOKEN}",
+        },
+        // Council tools never block longer than ~50s; keep this above that.
+        requestTimeoutMs: 60000,
+        // Optional: expose only some tools, e.g.
+        // toolFilter: { include: ["council_ask", "council_status", "council_result", "council_control", "council_approve"] },
+      },
+    },
+  },
+}

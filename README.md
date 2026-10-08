@@ -243,6 +243,19 @@ Attach images and files to a quest with the paperclip button in the action bar (
 - **PDFs**: parsed through OpenRouter's file-parser plugin; choose the engine with `PDF_ENGINE` (`pdf-text` default/free, `mistral-ocr`, or `native`).
 - **Cost**: images cost extra tokens. Only vision-capable models receive raw images; other agents get a text digest produced by the lead (counted against the quest budget).
 
+### OpenClaw / MCP agent access
+
+Council can be used as a tool by an [OpenClaw](https://docs.openclaw.ai) agent through a remote MCP server (Streamable HTTP) at `/api/mcp`.
+
+```bash
+npm run mcp:token                       # generate a token, set it as MCP_TOKEN in .env.local
+openclaw mcp add council --url http://<host>:3000/api/mcp --transport streamable-http
+openclaw mcp configure council --approval prompt
+openclaw mcp doctor council --probe
+```
+
+Relevant env vars: `MCP_TOKEN`, `MCP_MAX_CONCURRENT`, `MCP_DAILY_COST_USD`, `MCP_DEFAULT_MAX_COST_USD`, `PUBLIC_BASE_URL`. Install the skill by symlinking `integrations/openclaw/council` to `~/.openclaw/skills/council`. Full setup, network options (Tailscale/VPN, never public without TLS) and the `openclaw.json` block: [docs/openclaw.md](docs/openclaw.md); example config: `integrations/openclaw/openclaw.example.json5`.
+
 ### Memory system
 
 Council remembers durable things across quests, locally. No vector DB, no Redis, no LangChain.

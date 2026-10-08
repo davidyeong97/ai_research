@@ -1,10 +1,33 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, isValidSession } from "@/lib/auth/session";
+import { bearerMatches, checkMcpRateLimit, isMcpPath, mcpTokenFromEnv, parseBearer } from "@/lib/auth/mcp";
 
 const PUBLIC_PATHS = new Set(["/login", "/api/login", "/api/logout"]);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Machine endpoint: bearer token only. Cookie sessions never grant access here.
+  if (isMcpPath(pathname)) {
+    const expected = mcpTokenFromEnv();
+    if (!expected) return NextResponse.json({ error: "MCP disabled" }, { status: 503 });
+    const presented = parseBearer(request.headers.get("authorization"));
+    if (!(await bearerMatches(presented, expected))) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: { "www-authenticate": "Bearer" } },
+      );
+    }
+    const retryAfter = checkMcpRateLimit(expected);
+    if (retryAfter) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded" },
+        { status: 429, headers: { "retry-after": String(retryAfter) } },
+      );
+    }
+    return NextResponse.next();
+  }
+
   const isApi = pathname.startsWith("/api/");
   const password = process.env.APP_PASSWORD;
 

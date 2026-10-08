@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StatsBar } from "./StatsBar";
 import { ActionBar } from "./ActionBar";
 import { ApprovalDialog } from "./ApprovalDialog";
@@ -10,6 +10,7 @@ import type { AttachmentRef, InspectSelection } from "@/lib/client/questReducer"
 import { ImageLightbox } from "./Attachments";
 import { MemoryPanel } from "./MemoryPanel";
 import { InspectPanel } from "./InspectPanel";
+import { RecentQuests } from "./RecentQuests";
 import { useQuestStream } from "@/hooks/useQuestStream";
 
 type Tab = "arena" | "stream";
@@ -24,7 +25,19 @@ export function AppShell() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("arena");
-  const { state, starting, uploading, connectionError, start, control, approve } = useQuestStream();
+  const { state, starting, uploading, connectionError, start, attach, control, approve } =
+    useQuestStream();
+  const [recentOpen, setRecentOpen] = useState(false);
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("quest");
+    if (id) void attach(id);
+  }, [attach]);
+
+  const openQuest = (id: string) => {
+    window.history.pushState(null, "", `/?quest=${encodeURIComponent(id)}`);
+    void attach(id);
+  };
   const [unread, setUnread] = useState(false);
   const [prev, setPrev] = useState({ count: 0, verdict: false });
   const count = state.transcript.length;
@@ -48,6 +61,14 @@ export function AppShell() {
         ⚔ COUNCIL ⚔
         <button
           type="button"
+          onClick={() => setRecentOpen(true)}
+          aria-label="Recent quests"
+          className="absolute left-2 top-1 min-h-11 min-w-11 border-2 border-black bg-amber-300 text-base text-black"
+        >
+          📜
+        </button>
+        <button
+          type="button"
           data-testid="memory-button"
           aria-label="Open memory manager"
           onClick={() => setManagerOpen(true)}
@@ -56,6 +77,7 @@ export function AppShell() {
           🧠 Memory
         </button>
       </header>
+      <RecentQuests open={recentOpen} onClose={() => setRecentOpen(false)} onSelect={openQuest} />
       <StatsBar state={state} onOpenMemory={() => setMemoryOpen(true)} />
       <main className="flex min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:divide-x-4 lg:divide-amber-200/80">
         <section
