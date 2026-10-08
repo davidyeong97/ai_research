@@ -5,12 +5,14 @@ import type { OrchestrationPlan } from "../../shared";
 import { BudgetExceeded, BudgetTracker, CostCapExceeded, costCapFromEnv } from "../budget";
 import type { EventBus } from "../bus";
 import { cacheKey, cacheGet, cacheSet, purgeExpired } from "../cache";
-import type { ChatMessage, LLMClient, LLMUsage } from "../llm";
-import { estimatePromptTokens } from "../llm";
-import { LEAD_MODELS } from "../roster";
+import type { ChatMessage, ContentPart, LLMClient, LLMUsage } from "../llm";
+import { estimatePromptTokens, hasMedia, supportsPdf, supportsVision } from "../llm";
+import { LEAD_MODELS, multimodalLeadModels } from "../roster";
+import type { AttachmentContext } from "./attachment-context";
 import { sanitizeText } from "./sanitize";
 import {
   buildAgentPrompt,
+  buildDigestPrompt,
   buildFactCheckPrompt,
   buildSynthesisPrompt,
   type DebateAgent,
@@ -32,7 +34,7 @@ export interface CheckpointContext {
   round: number;
   /** Agent about to speak ("lead" before synthesis). */
   agentId: string;
-  phase: "agent" | "synthesis" | "summary" | "factcheck";
+  phase: "agent" | "synthesis" | "summary" | "factcheck" | "digest";
   history: readonly HistoryEntry[];
 }
 
@@ -46,10 +48,14 @@ export interface DebateOptions {
   agentMaxTokens?: number;
   summaryMaxTokens?: number;
   synthesisMaxTokens?: number;
+  digestMaxTokens?: number;
+  /** Quest attachments (untrusted); enables the digest step and media/text prompt inputs. */
+  attachments?: AttachmentContext;
 }
 
 const AGENT_MAX_TOKENS = 400;
 const SYNTHESIS_MAX_TOKENS = 700;
+const DIGEST_MAX_TOKENS = 500;
 const SUMMARY_MAX_TOKENS = 500; // ~400-token target plus headroom
 
 export const DEFAULT_WEB_SEARCH_MAX_RESULTS = 3;
@@ -57,6 +63,29 @@ export const DEFAULT_WEB_SEARCH_MAX_RESULTS = 3;
 export function webSearchMaxResults(): number {
   const n = Number(process.env.WEB_SEARCH_MAX_RESULTS);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_WEB_SEARCH_MAX_RESULTS;
+}
+
+/** Drops image/file parts from messages (text kept). */
+function stripMedia(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map((m) =>
+    typeof m.content === "string"
+      ? m
+      : { ...m, content: m.content.filter((p) => p.type === "text") },
+  );
+}
+
+/** Models able to handle every media part in `messages`. */
+function mediaCapableModels(models: string[], messages: ChatMessage[]): string[] {
+  let image = false;
+  let pdf = false;
+  for (const m of messages) {
+    if (typeof m.content === "string") continue;
+    for (const p of m.content) {
+      if (p.type === "image") image = true;
+      else if (p.type === "file") pdf = true;
+    }
+  }
+  return models.filter((m) => (!image || supportsVision(m)) && (!pdf || supportsPdf(m)));
 }
 
 /** Citations come from the open web: keep http(s) URLs only and sanitize titles. */
@@ -98,6 +127,18 @@ export async function runDebate(
   let currentRound = 1;
   let summary: string | undefined;
   let factCheck: string | undefined;
+  let digest: string | undefined;
+  const att = opts.attachments && opts.attachments.items.length > 0 ? opts.attachments : undefined;
+
+  /** Raw media this agent's model can read (round 1 only, to control cost). */
+  const mediaFor = (agent: DebateAgent, round: number): ContentPart[] | undefined => {
+    if (!att || round !== 1 || !agent.model) return undefined;
+    const model = agent.model;
+    const parts = att.media
+      .filter((m) => (m.kind === "image" ? supportsVision(model) : supportsPdf(model)))
+      .map((m) => m.part);
+    return parts.length ? parts : undefined;
+  };
 
   const emit = (
     round: number,
@@ -123,11 +164,20 @@ export async function runDebate(
     models: string[];
     messages: ChatMessage[];
     maxTokens: number;
-    rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY" | "FACT_CHECK";
+    rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY" | "FACT_CHECK" | "DIGEST";
     extraData?: Record<string, unknown>;
     webSearch?: { maxResults: number };
   }): Promise<string> {
-    const { round, agentId, models, messages, maxTokens } = args;
+    const { round, agentId, maxTokens } = args;
+    // Media only goes to models that can read it; with none, strip it (the digest stays in the text).
+    let models = args.models;
+    let messages = args.messages;
+    const mediaCall = hasMedia(messages);
+    if (mediaCall) {
+      const capable = mediaCapableModels(models, messages);
+      if (capable.length > 0) models = capable;
+      else messages = stripMedia(messages);
+    }
     const promptEstimate = estimatePromptTokens(messages);
     budget.assertCanSpend(maxTokens + promptEstimate, agentId);
 
@@ -150,12 +200,23 @@ export async function runDebate(
       reasoning = hit.reasoning ?? "";
       citations.push(...hit.citations);
     } else {
-      for await (const c of d.llm.streamChat({ messages, models, maxTokens, webSearch: args.webSearch })) {
-        if (c.type === "text") text += c.delta;
-        else if (c.type === "reasoning") reasoning += c.delta;
-        else if (c.type === "usage") usage = c.usage;
-        else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
-        else emit(round, agentId, "FALLBACK", 0, { primary: c.primary, modelUsed: c.modelUsed });
+      const consume = async (msgs: ChatMessage[], mdls: string[]) => {
+        for await (const c of d.llm.streamChat({ messages: msgs, models: mdls, maxTokens, webSearch: args.webSearch })) {
+          if (c.type === "text") text += c.delta;
+          else if (c.type === "reasoning") reasoning += c.delta;
+          else if (c.type === "usage") usage = c.usage;
+          else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
+          else emit(round, agentId, "FALLBACK", 0, { primary: c.primary, modelUsed: c.modelUsed });
+        }
+      };
+      try {
+        await consume(messages, models);
+      } catch (e) {
+        // A media call failed before producing output: retry once text-only over the full model chain.
+        if (!(hasMedia(messages) && !text)) throw e;
+        reasoning = "";
+        citations.length = 0;
+        await consume(stripMedia(messages), args.models);
       }
       if (key && text) {
         cacheSet(d.db, key, { text, reasoning: reasoning || undefined, citations, model: usage?.modelUsed });
@@ -206,6 +267,33 @@ export async function runDebate(
     // Yield so the caller can subscribe before events fire.
     await new Promise((r) => setTimeout(r, 0));
 
+    if (att) {
+      await checkpoint({ questId, round: 1, agentId: "lead", phase: "digest", history });
+      emit(1, "lead", "THINKING", 0, { statusMessage: "Examining attachments…" });
+      const needPdf = att.hasPdf;
+      const leadModels = multimodalLeadModels(needPdf);
+      const media = att.media
+        .filter((m) => (m.kind === "image" ? supportsVision(leadModels[0]) : supportsPdf(leadModels[0])))
+        .map((m) => m.part);
+      digest =
+        (
+          await turn({
+            round: 1,
+            agentId: "lead",
+            models: leadModels,
+            messages: buildDigestPrompt({
+              query,
+              textBlock: att.textBlock,
+              media,
+              names: att.items.map((i) => i.filename),
+            }),
+            maxTokens: opts.digestMaxTokens ?? DIGEST_MAX_TOKENS,
+            rowAction: "DIGEST",
+            extraData: { attachmentDigest: true },
+          })
+        ).trim() || undefined;
+    }
+
     for (let round = 1; round <= maxRounds; round++) {
       currentRound = round;
       const roundEntries: HistoryEntry[] = [];
@@ -242,6 +330,9 @@ export async function runDebate(
           agents,
           summary,
           factCheck,
+          attachments: att
+            ? { textBlock: att.textBlock, digest, media: mediaFor(agent, round) }
+            : undefined,
         });
         const models = [agent.model, ...agent.fallbackModels].filter((m): m is string => !!m);
         const text = await turn({
@@ -274,6 +365,7 @@ export async function runDebate(
             round,
             entries: claims,
             searchEnabled,
+            digest,
           }),
           maxTokens: agentMax,
           rowAction: "FACT_CHECK",
@@ -292,7 +384,7 @@ export async function runDebate(
       round: maxRounds,
       agentId: "lead",
       models: LEAD_MODELS,
-      messages: buildSynthesis({ query, maxRounds, history, agents, factCheck }),
+      messages: buildSynthesis({ query, maxRounds, history, agents, factCheck, digest }),
       maxTokens: synthMax,
       rowAction: "CONSENSUS",
     });

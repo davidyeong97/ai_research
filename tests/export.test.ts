@@ -47,7 +47,7 @@ describe("GET /api/quests/[id]/export", () => {
     const js = await get(questId, "json");
     expect(js.headers.get("content-disposition")).toContain(`council-${questId}.json`);
     const body = await js.json();
-    expect(Object.keys(body).sort()).toEqual(["agentMessages", "events", "plan", "session"]);
+    expect(Object.keys(body).sort()).toEqual(["agentMessages", "attachments", "events", "plan", "session"]);
     expect(body.session.id).toBe(questId);
     expect(body.events.length).toBeGreaterThan(0);
     expect(body.agentMessages.length).toBeGreaterThan(0);
