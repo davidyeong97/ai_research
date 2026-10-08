@@ -9,6 +9,7 @@ const STATEMENTS = [
     total_tokens INTEGER NOT NULL DEFAULT 0,
     total_cost_usd REAL NOT NULL DEFAULT 0,
     outcome TEXT,
+    source TEXT NOT NULL DEFAULT 'web',
     created_at INTEGER NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS orchestration_plans (
@@ -47,5 +48,10 @@ const STATEMENTS = [
 export function migrate(sqlite: Database.Database): void {
   sqlite.transaction(() => {
     for (const s of STATEMENTS) sqlite.exec(s);
+    // Upgrade databases created before sessions.source existed.
+    const cols = sqlite.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "source")) {
+      sqlite.exec(`ALTER TABLE sessions ADD COLUMN source TEXT NOT NULL DEFAULT 'web'`);
+    }
   })();
 }
