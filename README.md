@@ -63,6 +63,7 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 - **Agent Capabilities**:
   - **Thinking/Scratchpad**: Emits visual reasoning events before submitting finalized messages.
   - **Web Search & Fact Checking**: Performs web queries in sandboxed tool environments and cross-verifies statements made by peer agents.
+  - **Attachments**: Quests can include images, PDFs and text/code files (untrusted, sanitized; vision-capable models see raw images, others get a lead-written digest). See [Attachments](#attachments).
 
 ### 3.3 Game-Like UI / UX Concepts
 
@@ -207,6 +208,7 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 - [x] Apply prompt injection sanitization across inter-agent communications.
 - [x] Add sound effects (8-bit text audio, battle chimes).
 - [x] Add transcript export (Markdown and JSON download).
+- [x] Add image/file attachments to quests (multimodal; see "Attachments" below).
 
 ---
 
@@ -228,6 +230,17 @@ Then open `http://<host-vpn-ip>:3000` on your phone and log in with `APP_PASSWOR
 - Data (SQLite) is stored at `DATABASE_PATH` (default `./data/council.db`).
 - Quests that were still running when the server restarted are marked `interrupted` on startup.
 - See `.env.example` for all configuration options.
+
+### Attachments
+
+Attach images and files to a quest with the paperclip button in the action bar (or `POST /api/uploads` as multipart `files`, then pass the returned ids as `attachmentIds` to `POST /api/quests`).
+
+- **Limits**: max 5 attachments per quest, 10 MB each (`MAX_UPLOAD_MB`), 25 MB total.
+- **Supported types**: images (png, jpeg, webp, gif), PDF, and text-like files (txt, md, csv, json, ts, tsx, js, py, java, go, rs, c, cpp, html, css, yaml, xml, sql, sh). Images and PDFs are validated by magic bytes, not the client MIME type; anything else is rejected with `415`.
+- **Storage**: files live in `UPLOADS_DIR` (default `uploads/` next to the SQLite DB, i.e. `./data/uploads`), never under `public/`. Downloads (`GET /api/uploads/<id>`) require the login session and are sent with `X-Content-Type-Options: nosniff`. Unlinked uploads older than 24h are purged.
+- **Untrusted content**: text extracted from files is sanitized and wrapped as untrusted data (like peer messages) before reaching any model, to defend against prompt injection. `ATTACHMENT_TEXT_MAX_CHARS` (default 20000) caps the inlined text.
+- **PDFs**: parsed through OpenRouter's file-parser plugin; choose the engine with `PDF_ENGINE` (`pdf-text` default/free, `mistral-ocr`, or `native`).
+- **Cost**: images cost extra tokens. Only vision-capable models receive raw images; other agents get a text digest produced by the lead (counted against the quest budget).
 
 ---
 
