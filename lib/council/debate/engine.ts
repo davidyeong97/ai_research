@@ -56,11 +56,6 @@ export interface DebateOptions {
   recalled?: string;
   /** Per-quest USD cap; defaults to MAX_COST_USD_PER_QUEST. Callers may only lower it. */
   costCapUsd?: number;
-  digestMaxTokens?: number;
-  /** Quest attachments (untrusted); enables the digest step and media/text prompt inputs. */
-  attachments?: AttachmentContext;
-  /** Fenced long-term memory block injected into every agent's round-1 prompt only. */
-  recalled?: string;
 }
 
 const AGENT_MAX_TOKENS = 400;
