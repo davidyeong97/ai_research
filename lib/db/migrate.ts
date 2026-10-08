@@ -84,6 +84,20 @@ const STATEMENTS = [
     INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
     INSERT INTO memories_fts(rowid, content) VALUES (new.rowid, new.content);
   END`,
+  // Audit trail of consolidation/decay changes, and extra provenance for merged memories.
+  `CREATE TABLE IF NOT EXISTS memory_ops (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    op TEXT NOT NULL,
+    memory_id TEXT,
+    detail TEXT NOT NULL DEFAULT ''
+  )`,
+  `CREATE INDEX IF NOT EXISTS memory_ops_op_ts_idx ON memory_ops (op, ts)`,
+  `CREATE TABLE IF NOT EXISTS memory_sources (
+    memory_id TEXT NOT NULL,
+    quest_id TEXT NOT NULL,
+    PRIMARY KEY (memory_id, quest_id)
+  )`,
 ];
 
 export function migrate(sqlite: Database.Database): void {
