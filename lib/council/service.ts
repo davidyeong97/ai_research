@@ -394,3 +394,10 @@ export function listQuests(
 }
 
 export { planSummary };
+
+/** Deep link to watch a quest in the web UI; undefined when PUBLIC_BASE_URL is unset. */
+export function questViewUrl(questId: string): string | undefined {
+  const base = process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
+  if (!base) return undefined;
+  return `${base}/?quest=${encodeURIComponent(questId)}`;
+}
