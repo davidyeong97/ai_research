@@ -15,6 +15,10 @@ export interface QuestDeps {
   llm?: LLMClient;
   /** Override the 30 min pause/approval timeout (tests). */
   controlTimeoutMs?: number;
+  /** Where the quest was started from. Default 'web'. */
+  source?: "web" | "mcp";
+  /** Per-quest USD cap (already clamped by the caller). Default: env cap. */
+  costCapUsd?: number;
 }
 
 const g = globalThis as unknown as { __councilLlm?: LLMClient };
@@ -50,6 +54,7 @@ export async function createQuest(
       id: questId,
       query,
       status: gated ? "awaiting_approval" : "running",
+      source: deps.source ?? "web",
       createdAt: Date.now(),
     })
     .run();
@@ -67,6 +72,7 @@ export async function createQuest(
     runDebate({ db, bus, llm }, questId, query, plan, {
       checkpoint: control.checkpointFor(bus),
       buildPrompt: control.wrapPromptBuilder(buildAgentPrompt),
+      costCapUsd: deps.costCapUsd,
     });
 
   let flow: Promise<void>;
@@ -84,7 +90,7 @@ export async function createQuest(
         awaitingApproval: true,
         plan: planSummary(plan),
         estimatedMaxTokens: plan.budgetCapTokens,
-        estimatedMaxCostUsd: estimateMaxCostUsd(plan.budgetCapTokens),
+        estimatedMaxCostUsd: Math.min(deps.costCapUsd ?? Infinity, estimateMaxCostUsd(plan.budgetCapTokens)),
       },
     });
     flow = approval.then(async (r) => {
@@ -102,7 +108,12 @@ export async function createQuest(
         agentId: "lead",
         action: "DONE",
         tokensUsed: 0,
-        data: { cancelled: true, reason: r === "timeout" ? "approval_timeout" : "rejected" },
+        data: { cancelled: true, reason:
+            r === "timeout"
+              ? control.aborted === "cancelled"
+                ? "cancelled"
+                : "approval_timeout"
+              : "rejected" },
       });
     });
   }
