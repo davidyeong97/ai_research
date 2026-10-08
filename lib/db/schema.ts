@@ -1,4 +1,4 @@
-import { index, integer, real, sqliteTable, text, primaryKey } from "drizzle-orm/sqlite-core";
+import { blob, index, integer, real, sqliteTable, text, primaryKey } from "drizzle-orm/sqlite-core";
 
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
@@ -68,4 +68,23 @@ export const attachments = sqliteTable(
     createdAt: integer("created_at").notNull(),
   },
   (t) => [index("attachments_session_idx").on(t.sessionId)],
+);
+
+/** FTS5 table `memories_fts` is created by migrate.ts (not representable in Drizzle). */
+export const memories = sqliteTable(
+  "memories",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind", { enum: ["fact", "preference", "summary"] }).notNull(),
+    content: text("content").notNull(),
+    embedding: blob("embedding", { mode: "buffer" }),
+    sourceQuestId: text("source_quest_id"),
+    scope: text("scope").notNull().default("default"),
+    pinned: integer("pinned").notNull().default(0),
+    confidence: real("confidence").notNull().default(0.5),
+    createdAt: integer("created_at").notNull(),
+    lastUsedAt: integer("last_used_at"),
+    useCount: integer("use_count").notNull().default(0),
+  },
+  (t) => [index("memories_kind_created_idx").on(t.kind, t.createdAt)],
 );

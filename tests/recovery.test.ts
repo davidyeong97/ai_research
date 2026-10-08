@@ -8,8 +8,10 @@ import { createDb, schema, type DB } from "@/lib/db";
 let db: DB;
 let bus: EventBus;
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
-const post = (body: unknown) => new Request("http://x", { method: "POST", body: JSON.stringify(body) });
-const status = (id: string) => db.select().from(schema.sessions).where(eq(schema.sessions.id, id)).get()?.status;
+const post = (body: unknown) =>
+  new Request("http://x", { method: "POST", body: JSON.stringify(body) });
+const status = (id: string) =>
+  db.select().from(schema.sessions).where(eq(schema.sessions.id, id)).get()?.status;
 
 function seed(id: string, st: string) {
   db.insert(schema.sessions).values({ id, query: "q", status: st, createdAt: Date.now() }).run();
@@ -28,7 +30,14 @@ describe("recoverStrandedQuests", () => {
     seed("b", "awaiting_approval");
     seed("c", "done");
     seed("d", "cancelled");
-    bus.publish({ questId: "a", round: 2, agentId: "x", action: "SPEAKING", tokensUsed: 0, data: {} });
+    bus.publish({
+      questId: "a",
+      round: 2,
+      agentId: "x",
+      action: "SPEAKING",
+      tokensUsed: 0,
+      data: {},
+    });
 
     expect(recoverStrandedQuests({ db, bus })).toBe(2);
     expect(status("a")).toBe("interrupted");
@@ -38,7 +47,12 @@ describe("recoverStrandedQuests", () => {
 
     const ea = bus.replay("a");
     expect(ea.map((e) => e.action)).toEqual(["SPEAKING", "ERROR"]);
-    expect(ea[1]).toMatchObject({ id: 2, round: 2, agentId: "lead", data: { reason: "server_restarted" } });
+    expect(ea[1]).toMatchObject({
+      id: 2,
+      round: 2,
+      agentId: "lead",
+      data: { reason: "server_restarted" },
+    });
     expect(bus.replay("b")).toHaveLength(1);
     expect(bus.replay("b")[0]).toMatchObject({ round: 0, action: "ERROR" });
     expect(bus.replay("c")).toHaveLength(0);
@@ -53,7 +67,10 @@ describe("recoverStrandedQuests", () => {
 
     const { POST: control } = await import("@/app/api/quests/[id]/control/route");
     const { POST: approve } = await import("@/app/api/quests/[id]/approve/route");
-    for (const r of [await control(post({ action: "pause" }), params("a")), await approve(post({ approved: true }), params("b"))]) {
+    for (const r of [
+      await control(post({ action: "pause" }), params("a")),
+      await approve(post({ approved: true }), params("b")),
+    ]) {
       expect(r.status).toBe(409);
       expect(await r.json()).toMatchObject({ reason: "server_restarted" });
     }

@@ -29,4 +29,3 @@ export function estimatePromptTokens(messages: ChatMessage[]): number {
   }
   return total;
 }
-

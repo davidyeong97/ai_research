@@ -14,7 +14,10 @@ beforeAll(async () => {
 
 async function get(id: string, format?: string) {
   const { GET } = await import("@/app/api/quests/[id]/export/route");
-  return GET(new Request(`http://x/api/quests/${id}/export${format ? `?format=${format}` : ""}`), params(id));
+  return GET(
+    new Request(`http://x/api/quests/${id}/export${format ? `?format=${format}` : ""}`),
+    params(id),
+  );
 }
 
 describe("GET /api/quests/[id]/export", () => {
@@ -34,7 +37,9 @@ describe("GET /api/quests/[id]/export", () => {
 
     const md = await get(questId);
     expect(md.status).toBe(200);
-    expect(md.headers.get("content-disposition")).toBe(`attachment; filename="council-${questId}.md"`);
+    expect(md.headers.get("content-disposition")).toBe(
+      `attachment; filename="council-${questId}.md"`,
+    );
     const text = await md.text();
     expect(text).toContain("# What is up?");
     expect(text).toContain("## Plan");
@@ -47,12 +52,48 @@ describe("GET /api/quests/[id]/export", () => {
     const js = await get(questId, "json");
     expect(js.headers.get("content-disposition")).toContain(`council-${questId}.json`);
     const body = await js.json();
-    expect(Object.keys(body).sort()).toEqual(["agentMessages", "attachments", "events", "plan", "session"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "agentMessages",
+      "attachments",
+      "events",
+      "plan",
+      "recalledMemoryIds",
+      "session",
+    ]);
     expect(body.session.id).toBe(questId);
     expect(body.events.length).toBeGreaterThan(0);
     expect(body.agentMessages.length).toBeGreaterThan(0);
 
     expect((await get("nope")).status).toBe(404);
     expect((await get(questId, "xml")).status).toBe(400);
+  });
+
+  it("includes recalled memory in md and json", async () => {
+    const db = createDb(":memory:");
+    const bus = new EventBus(db);
+    (globalThis as G).__councilDb = db;
+    (globalThis as G).__councilBus = bus;
+    setLLMClient(
+      new MockLLMClient((p) =>
+        textOf(p.messages[0].content).includes("Lead Orchestrator")
+          ? JSON.stringify({ domain: "coding", complexity: 3 })
+          : "reply text",
+      ),
+    );
+    const { questId, done } = await createQuest("Memory q", {});
+    await done;
+    bus.publish({
+      questId,
+      round: 0,
+      agentId: "lead",
+      action: "RECALL",
+      tokensUsed: 0,
+      data: { count: 1, ids: ["m1"], kinds: ["preference"], preview: ["likes concise answers"] },
+    });
+    const text = await (await get(questId)).text();
+    expect(text).toContain("## Recalled memory");
+    expect(text).toContain("- [preference] likes concise answers (m1)");
+    const body = await (await get(questId, "json")).json();
+    expect(body.recalledMemoryIds).toEqual(["m1"]);
   });
 });

@@ -3,7 +3,12 @@ import { NextRequest } from "next/server";
 import { proxy } from "@/proxy";
 import { POST as login, resetLoginLimiter } from "@/app/api/login/route";
 import { POST as logout } from "@/app/api/logout/route";
-import { SESSION_COOKIE, computeSessionToken, isValidSession, timingSafeEqualStr } from "@/lib/auth/session";
+import {
+  SESSION_COOKIE,
+  computeSessionToken,
+  isValidSession,
+  timingSafeEqualStr,
+} from "@/lib/auth/session";
 
 const orig = process.env.APP_PASSWORD;
 beforeEach(() => {
@@ -73,7 +78,9 @@ describe("login/logout", () => {
     expect(res.headers.get("set-cookie")).toBeNull();
   });
   it("logout clears cookie", async () => {
-    const sc = (await logout(new Request("http://localhost/api/logout", { method: "POST" }))).headers.get("set-cookie")!;
+    const sc = (
+      await logout(new Request("http://localhost/api/logout", { method: "POST" }))
+    ).headers.get("set-cookie")!;
     expect(sc).toMatch(/Max-Age=0/i);
   });
 });
@@ -155,7 +162,9 @@ describe("cookie secure flag", () => {
   });
   it("Secure over https or x-forwarded-proto", async () => {
     expect(await cookieFor("https://localhost/api/login")).toMatch(/Secure/i);
-    expect(await cookieFor("http://localhost/api/login", { "x-forwarded-proto": "https" })).toMatch(/Secure/i);
+    expect(await cookieFor("http://localhost/api/login", { "x-forwarded-proto": "https" })).toMatch(
+      /Secure/i,
+    );
   });
   it("Secure when COOKIE_SECURE=true", async () => {
     process.env.COOKIE_SECURE = "true";

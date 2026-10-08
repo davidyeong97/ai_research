@@ -15,7 +15,11 @@ export function AttachmentList({
 }) {
   if (attachments.length === 0) return null;
   return (
-    <ul aria-label="Attachments" className="mt-1 flex flex-wrap gap-2" data-testid="attachment-list">
+    <ul
+      aria-label="Attachments"
+      className="mt-1 flex flex-wrap gap-2"
+      data-testid="attachment-list"
+    >
       {attachments.map((a) => (
         <li key={a.id}>
           {a.kind === "image" ? (

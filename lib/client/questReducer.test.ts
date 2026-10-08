@@ -20,6 +20,43 @@ const started = () => {
   return questReducer(initialQuestState, { type: "start", questId: "q1", plan: MOCK_PLAN });
 };
 
+describe("questReducer RECALL", () => {
+  it("renders an expandable memory entry and tracks recalled memories", () => {
+    const s = run(
+      started(),
+      ev({
+        agentId: "lead",
+        action: "RECALL",
+        round: 0,
+        data: {
+          count: 2,
+          ids: ["a", "b"],
+          kinds: ["preference", "fact"],
+          preview: ["likes tea", "uses vim"],
+          block: "<long_term_memory>x</long_term_memory>",
+        },
+      }),
+    );
+    expect(s.transcript.at(-1)).toMatchObject({
+      kind: "memory",
+      action: "RECALL",
+      text: "🧠 Council recalled 2 memories: likes tea | uses vim",
+      block: "<long_term_memory>x</long_term_memory>",
+    });
+    expect(s.recalled).toEqual([
+      { id: "a", kind: "preference", preview: "likes tea" },
+      { id: "b", kind: "fact", preview: "uses vim" },
+    ]);
+    expect(s.phase).toBe("running");
+  });
+
+  it("tolerates missing data", () => {
+    const s = run(started(), ev({ agentId: "lead", action: "RECALL", round: 0 }));
+    expect(s.transcript.at(-1)?.text).toBe("🧠 Council recalled 0 memories");
+    expect(s.recalled).toEqual([]);
+  });
+});
+
 describe("questReducer", () => {
   it("start builds agents from the plan", () => {
     const s = started();
@@ -75,7 +112,12 @@ describe("questReducer", () => {
         data: {
           message: "Hi",
           thought: "because",
-          citations: [{ url: "https://a.com/x", title: "A" }, { url: 5 }, "bad", { url: "https://b.org" }],
+          citations: [
+            { url: "https://a.com/x", title: "A" },
+            { url: 5 },
+            "bad",
+            { url: "https://b.org" },
+          ],
           model: "m/x",
           costUsd: 0.002,
           latencyMs: 1200,

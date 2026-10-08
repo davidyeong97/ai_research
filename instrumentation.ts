@@ -9,4 +9,6 @@ export async function register(): Promise<void> {
   purgeExpired();
   const { purgeStaleUploads } = await import("./lib/council/attachments");
   purgeStaleUploads().catch(() => {});
+  const { consolidateOnStartup } = await import("./lib/council/memory/consolidate");
+  consolidateOnStartup();
 }

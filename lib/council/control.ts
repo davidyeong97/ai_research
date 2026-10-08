@@ -99,8 +99,20 @@ export class QuestControl {
 
   /** Engine between-turns checkpoint: honours pause, then promotes queued guidance at round start. */
   checkpointFor(bus: EventBus): NonNullable<DebateOptions["checkpoint"]> {
-    const emit = (ctx: CheckpointContext, agentId: string, action: "PAUSED" | "SPEAKING", data: Record<string, unknown>) =>
-      bus.publish({ questId: this.questId, round: ctx.round, agentId, action, tokensUsed: 0, data });
+    const emit = (
+      ctx: CheckpointContext,
+      agentId: string,
+      action: "PAUSED" | "SPEAKING",
+      data: Record<string, unknown>,
+    ) =>
+      bus.publish({
+        questId: this.questId,
+        round: ctx.round,
+        agentId,
+        action,
+        tokensUsed: 0,
+        data,
+      });
     return async (ctx) => {
       if (this.aborted) throw new QuestAborted(this.aborted);
       if (this.paused) {

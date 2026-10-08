@@ -3,7 +3,8 @@ import { getBus, type EventBus } from "./bus";
 import { getControl } from "./control";
 import { getDb, schema, type DB } from "../db";
 
-export const RESTART_MESSAGE = "The server restarted while this quest was running. Please start a new quest.";
+export const RESTART_MESSAGE =
+  "The server restarted while this quest was running. Please start a new quest.";
 
 /**
  * Marks quests left 'running'/'awaiting_approval' by a previous process as
@@ -21,7 +22,10 @@ export function recoverStrandedQuests(deps: { db?: DB; bus?: EventBus } = {}): n
     .filter((s) => !getControl(s.id));
   for (const { id } of stranded) {
     const round = bus.replay(id).reduce((m, e) => Math.max(m, e.round ?? 0), 0);
-    db.update(schema.sessions).set({ status: "interrupted" }).where(eq(schema.sessions.id, id)).run();
+    db.update(schema.sessions)
+      .set({ status: "interrupted" })
+      .where(eq(schema.sessions.id, id))
+      .run();
     bus.publish({
       questId: id,
       round,

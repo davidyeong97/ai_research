@@ -49,9 +49,7 @@ describe("part mapping", () => {
       ...msgs(png),
       {
         role: "user",
-        content: [
-          { type: "file", data: pdf, mediaType: "application/pdf", filename: "a.pdf" },
-        ],
+        content: [{ type: "file", data: pdf, mediaType: "application/pdf", filename: "a.pdf" }],
       },
     ]);
     expect(out[0]).toEqual({ role: "system", content: "sys" });
@@ -88,7 +86,8 @@ describe("part mapping", () => {
 describe("mock", () => {
   it("records multimodal messages", async () => {
     const llm = new MockLLMClient("ok");
-    for await (const _ of llm.streamChat({ messages: msgs(png), models: ["m"], maxTokens: 10 })) void _;
+    for await (const _ of llm.streamChat({ messages: msgs(png), models: ["m"], maxTokens: 10 }))
+      void _;
     expect(llm.calls[0].messages[1].content).toHaveLength(2);
   });
 });
@@ -120,7 +119,10 @@ describe("capabilities", () => {
           data: [
             { id: "deepseek/deepseek-chat", architecture: { input_modalities: ["text", "image"] } },
             { id: "openai/gpt-5", architecture: { input_modalities: ["text"] } },
-            { id: "google/gemini-2.5-pro", architecture: { input_modalities: ["text", "image", "file"] } },
+            {
+              id: "google/gemini-2.5-pro",
+              architecture: { input_modalities: ["text", "image", "file"] },
+            },
           ],
         }),
       };
@@ -140,20 +142,27 @@ describe("estimatePromptTokens", () => {
     expect(estimatePromptTokens([{ role: "user", content: "abcdefgh" }])).toBe(2);
     expect(estimatePromptTokens(msgs(png))).toBe(1 + 1 + 1500);
     const withPdf = estimatePromptTokens([
-      { role: "user", content: [{ type: "file", data: pdf, mediaType: "application/pdf", filename: "a.pdf" }] },
+      {
+        role: "user",
+        content: [{ type: "file", data: pdf, mediaType: "application/pdf", filename: "a.pdf" }],
+      },
     ]);
     expect(withPdf).toBeGreaterThanOrEqual(2000);
     const b64 = Buffer.from(pdf).toString("base64");
     expect(
       estimatePromptTokens([
-        { role: "user", content: [{ type: "file", data: b64, mediaType: "application/pdf", filename: "a.pdf" }] },
+        {
+          role: "user",
+          content: [{ type: "file", data: b64, mediaType: "application/pdf", filename: "a.pdf" }],
+        },
       ]),
     ).toBe(withPdf);
   });
 });
 
 describe("cacheKey", () => {
-  const key = (m: ChatMessage[]) => cacheKey({ tool: "t", maxResults: 1, models: ["m"], messages: m });
+  const key = (m: ChatMessage[]) =>
+    cacheKey({ tool: "t", maxResults: 1, models: ["m"], messages: m });
   it("differs per image, stable for same bytes (bytes or base64)", () => {
     expect(key(msgs(png))).not.toBe(key(msgs(png2)));
     expect(key(msgs(png))).toBe(key(msgs(new Uint8Array(png))));

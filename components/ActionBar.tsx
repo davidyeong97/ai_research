@@ -79,8 +79,7 @@ export function ActionBar({
   };
   const canControl = running && !!onControl;
   const canInject = canControl && guidance.trim().length > 0;
-  const canSubmit =
-    !busy && (query.trim().length > 0 || files.length > 0) && !!onSubmit;
+  const canSubmit = !busy && (query.trim().length > 0 || files.length > 0) && !!onSubmit;
   return (
     <div className="flex-none space-y-2 border-t-4 border-amber-200/80 bg-indigo-950 px-3 pt-2 pb-2 lg:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
       <form
@@ -117,7 +116,11 @@ export function ActionBar({
           </p>
         )}
         {fileErrors.length > 0 && (
-          <ul role="alert" aria-label="Attachment errors" className="space-y-0.5 text-xs text-red-300">
+          <ul
+            role="alert"
+            aria-label="Attachment errors"
+            className="space-y-0.5 text-xs text-red-300"
+          >
             {fileErrors.map((m, i) => (
               <li key={i} className="break-words">
                 {m}
@@ -183,7 +186,12 @@ export function ActionBar({
             maxLength={4000}
             className="min-h-11 min-w-0 flex-1 border-2 border-black bg-black/50 px-3 text-base text-white placeholder:text-indigo-300"
           />
-          <button type="submit" aria-label="Go" disabled={!canSubmit} className={`${BTN} flex-none`}>
+          <button
+            type="submit"
+            aria-label="Go"
+            disabled={!canSubmit}
+            className={`${BTN} flex-none`}
+          >
             {uploading ? "…" : "Go"}
           </button>
         </div>

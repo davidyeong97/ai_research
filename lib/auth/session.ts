@@ -24,7 +24,10 @@ export function sessionTtlSeconds(): number {
 }
 
 /** Token: `<issuedAtMs>.<expiresAtMs>.<hexHmac>`; HMAC keyed by the password, never the raw password. */
-export async function computeSessionToken(password: string, now: number = Date.now()): Promise<string> {
+export async function computeSessionToken(
+  password: string,
+  now: number = Date.now(),
+): Promise<string> {
   const issuedAt = Math.floor(now);
   const expiresAt = issuedAt + sessionTtlSeconds() * 1000;
   const mac = await hmacHex(password, `${SESSION_LABEL}|${issuedAt}|${expiresAt}`);

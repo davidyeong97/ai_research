@@ -51,6 +51,8 @@ export interface DebateOptions {
   digestMaxTokens?: number;
   /** Quest attachments (untrusted); enables the digest step and media/text prompt inputs. */
   attachments?: AttachmentContext;
+  /** Fenced long-term memory block injected into every agent's round-1 prompt only. */
+  recalled?: string;
 }
 
 const AGENT_MAX_TOKENS = 400;
@@ -201,7 +203,12 @@ export async function runDebate(
       citations.push(...hit.citations);
     } else {
       const consume = async (msgs: ChatMessage[], mdls: string[]) => {
-        for await (const c of d.llm.streamChat({ messages: msgs, models: mdls, maxTokens, webSearch: args.webSearch })) {
+        for await (const c of d.llm.streamChat({
+          messages: msgs,
+          models: mdls,
+          maxTokens,
+          webSearch: args.webSearch,
+        })) {
           if (c.type === "text") text += c.delta;
           else if (c.type === "reasoning") reasoning += c.delta;
           else if (c.type === "usage") usage = c.usage;
@@ -219,7 +226,12 @@ export async function runDebate(
         await consume(stripMedia(messages), args.models);
       }
       if (key && text) {
-        cacheSet(d.db, key, { text, reasoning: reasoning || undefined, citations, model: usage?.modelUsed });
+        cacheSet(d.db, key, {
+          text,
+          reasoning: reasoning || undefined,
+          citations,
+          model: usage?.modelUsed,
+        });
         purgeExpired(d.db);
       }
     }
@@ -273,7 +285,9 @@ export async function runDebate(
       const needPdf = att.hasPdf;
       const leadModels = multimodalLeadModels(needPdf);
       const media = att.media
-        .filter((m) => (m.kind === "image" ? supportsVision(leadModels[0]) : supportsPdf(leadModels[0])))
+        .filter((m) =>
+          m.kind === "image" ? supportsVision(leadModels[0]) : supportsPdf(leadModels[0]),
+        )
         .map((m) => m.part);
       digest =
         (
@@ -330,6 +344,7 @@ export async function runDebate(
           agents,
           summary,
           factCheck,
+          ...(round === 1 && opts.recalled ? { recalled: opts.recalled } : {}),
           attachments: att
             ? { textBlock: att.textBlock, digest, media: mediaFor(agent, round) }
             : undefined,
@@ -342,9 +357,10 @@ export async function runDebate(
           messages,
           maxTokens: agentMax,
           rowAction: "SPEAKING",
-          webSearch: searchEnabled && (round === 1 || plan.complexityScore >= 5)
-            ? { maxResults: webSearchMaxResults() }
-            : undefined,
+          webSearch:
+            searchEnabled && (round === 1 || plan.complexityScore >= 5)
+              ? { maxResults: webSearchMaxResults() }
+              : undefined,
         });
         roundEntries.push({ round, agentId: agent.id, role: agent.role, text });
       }
@@ -353,7 +369,9 @@ export async function runDebate(
       if (round === 1 && (maxRounds >= 2 || plan.complexityScore >= 4) && agents.length > 0) {
         const checker = agents.find((a) => a.role === "scout" || a.avatar === "scout") ?? agents[0];
         await checkpoint({ questId, round, agentId: checker.id, phase: "factcheck", history });
-        emit(round, checker.id, "FACT_CHECKING", 0, { statusMessage: "Fact-checking peers' claims…" });
+        emit(round, checker.id, "FACT_CHECKING", 0, {
+          statusMessage: "Fact-checking peers' claims…",
+        });
         const claims = roundEntries.filter((e) => e.agentId !== checker.id);
         const verdict = await turn({
           round,

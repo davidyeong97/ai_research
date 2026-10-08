@@ -1,9 +1,5 @@
 import { getDb, type DB } from "../../db";
-import {
-  readAttachmentBytes,
-  readAttachmentText,
-  type AttachmentRecord,
-} from "../attachments";
+import { readAttachmentBytes, readAttachmentText, type AttachmentRecord } from "../attachments";
 import type { ContentPart } from "../llm";
 import { wrapDataBlock } from "./sanitize";
 
@@ -39,23 +35,39 @@ export interface AttachmentContext {
   hasPdf: boolean;
 }
 
-export function toMeta(r: Pick<AttachmentRecord, "id" | "filename" | "kind" | "sizeBytes">): AttachmentMeta {
-  return { id: r.id, filename: r.filename, kind: r.kind as AttachmentMeta["kind"], sizeBytes: r.sizeBytes };
+export function toMeta(
+  r: Pick<AttachmentRecord, "id" | "filename" | "kind" | "sizeBytes">,
+): AttachmentMeta {
+  return {
+    id: r.id,
+    filename: r.filename,
+    kind: r.kind as AttachmentMeta["kind"],
+    sizeBytes: r.sizeBytes,
+  };
 }
 
 function fmtSize(n: number): string {
-  return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} B`;
+  return n >= 1048576
+    ? `${(n / 1048576).toFixed(1)} MB`
+    : n >= 1024
+      ? `${Math.round(n / 1024)} KB`
+      : `${n} B`;
 }
 
 /** Loads bytes/text for the given records. Text content is sanitized and wrapped as untrusted data. */
-export function buildAttachmentContext(records: AttachmentRecord[], db: DB = getDb()): AttachmentContext {
+export function buildAttachmentContext(
+  records: AttachmentRecord[],
+  db: DB = getDb(),
+): AttachmentContext {
   const items = records.map(toMeta);
   const media: MediaPart[] = [];
   const textBlocks: string[] = [];
   const manifest: string[] = [];
   let remaining = attachmentTextMaxChars();
   for (const r of records) {
-    manifest.push(`- ${wrapDataBlock("attachment_name", {}, r.filename, { maxChars: 120 })} (${r.kind}, ${fmtSize(r.sizeBytes)})`);
+    manifest.push(
+      `- ${wrapDataBlock("attachment_name", {}, r.filename, { maxChars: 120 })} (${r.kind}, ${fmtSize(r.sizeBytes)})`,
+    );
     if (r.kind === "image") {
       media.push({
         kind: "image",
@@ -73,9 +85,17 @@ export function buildAttachmentContext(records: AttachmentRecord[], db: DB = get
       });
     } else {
       const text = readAttachmentText(r.id, remaining, db);
-      manifest.push(wrapDataBlock("attachment_file", { name: r.filename }, text, { maxChars: MANIFEST_PREVIEW_CHARS }));
+      manifest.push(
+        wrapDataBlock("attachment_file", { name: r.filename }, text, {
+          maxChars: MANIFEST_PREVIEW_CHARS,
+        }),
+      );
       if (remaining > 0) {
-        textBlocks.push(wrapDataBlock("attachment_file", { name: r.filename, kind: "text" }, text, { maxChars: remaining }));
+        textBlocks.push(
+          wrapDataBlock("attachment_file", { name: r.filename, kind: "text" }, text, {
+            maxChars: remaining,
+          }),
+        );
         remaining -= text.length;
       }
     }
