@@ -21,23 +21,39 @@ const started = () => {
 };
 
 describe("questReducer RECALL", () => {
-  it("renders a status transcript entry without changing agent status", () => {
+  it("renders an expandable memory entry and tracks recalled memories", () => {
     const s = run(
       started(),
       ev({
         agentId: "lead",
         action: "RECALL",
         round: 0,
-        data: { count: 2, preview: ["likes tea", "uses vim"] },
+        data: {
+          count: 2,
+          ids: ["a", "b"],
+          kinds: ["preference", "fact"],
+          preview: ["likes tea", "uses vim"],
+          block: "<long_term_memory>x</long_term_memory>",
+        },
       }),
     );
     expect(s.transcript.at(-1)).toMatchObject({
-      kind: "status",
+      kind: "memory",
       action: "RECALL",
-      text: "Recalled 2 memories: likes tea | uses vim",
+      text: "🧠 Council recalled 2 memories: likes tea | uses vim",
+      block: "<long_term_memory>x</long_term_memory>",
     });
-    expect(s.agents.every((a) => a.status === "IDLE")).toBe(true);
+    expect(s.recalled).toEqual([
+      { id: "a", kind: "preference", preview: "likes tea" },
+      { id: "b", kind: "fact", preview: "uses vim" },
+    ]);
     expect(s.phase).toBe("running");
+  });
+
+  it("tolerates missing data", () => {
+    const s = run(started(), ev({ agentId: "lead", action: "RECALL", round: 0 }));
+    expect(s.transcript.at(-1)?.text).toBe("🧠 Council recalled 0 memories");
+    expect(s.recalled).toEqual([]);
   });
 });
 

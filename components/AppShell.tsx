@@ -20,6 +20,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 export function AppShell() {
   const [lightbox, setLightbox] = useState<AttachmentRef | null>(null);
   const [selected, setSelected] = useState<InspectSelection | null>(null);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("arena");
   const { state, starting, uploading, connectionError, start, control, approve } = useQuestStream();
   const [unread, setUnread] = useState(false);
@@ -44,7 +45,7 @@ export function AppShell() {
       <header className="flex-none border-b-4 border-amber-200/80 px-3 py-2 text-center text-lg font-bold tracking-widest text-amber-300">
         ⚔ COUNCIL ⚔
       </header>
-      <StatsBar state={state} />
+      <StatsBar state={state} onOpenMemory={() => setMemoryOpen(true)} />
       <main className="flex min-h-0 flex-1 lg:grid lg:grid-cols-2 lg:divide-x-4 lg:divide-amber-200/80">
         <section
           id="panel-arena"
@@ -78,8 +79,17 @@ export function AppShell() {
         paused={state.paused}
         onControl={control}
       />
+      {!selected && memoryOpen && (
+        <InspectPanel
+          agent={undefined}
+          memories={state.recalled}
+          initialTab="memory"
+          onClose={() => setMemoryOpen(false)}
+        />
+      )}
       {selected && (
         <InspectPanel
+          memories={state.recalled}
           agent={state.agents.find((a) => a.id === selected.agentId)}
           entry={
             selected.entryId === undefined

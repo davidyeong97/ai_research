@@ -69,6 +69,7 @@ const BADGE_COLOR: Record<string, number> = {
   SEARCHING: 0x38bdf8,
   SPEAKING: 0x34d399,
   FACT_CHECKING: 0xfb923c,
+  RECALL: 0xf9a8d4,
   CONSENSUS: 0x5eead4,
   FALLBACK: 0xe879f9,
   PAUSED: 0xa1a1aa,

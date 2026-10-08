@@ -128,6 +128,7 @@ export async function createQuest(
         ids: recall.ids,
         chars: recall.chars,
         preview: recall.preview,
+        kinds: recall.memories.map((m) => m.kind),
         block: recall.block,
       },
     });

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { InspectPanel } from "./InspectPanel";
 import { StatsBar, derivePhase } from "./StatsBar";
 import { initialQuestState, questReducer, type QuestState } from "@/lib/client/questReducer";
 import { MOCK_PLAN } from "./mock-data";
@@ -33,6 +34,26 @@ describe("currentRound reducer field", () => {
   it("tracks max round seen and ignores lower rounds", () => {
     const s = run(ev(1, 1, "THINKING"), ev(2, 3, "THINKING"), ev(3, 2, "THINKING"));
     expect(s.currentRound).toBe(3);
+  });
+});
+
+describe("StatsBar memory indicator", () => {
+  it("is hidden without RECALL and opens the memory view when clicked", () => {
+    const { rerender } = render(<StatsBar state={run(ev(1, 1, "THINKING"))} />);
+    expect(screen.queryByTestId("stats-memory")).toBeNull();
+    const s = run(
+      ev(1, 0, "RECALL", { count: 1, ids: ["m1"], kinds: ["fact"], preview: ["sky is blue"] }),
+    );
+    const open = vi.fn();
+    rerender(<StatsBar state={s} onOpenMemory={open} />);
+    fireEvent.click(screen.getByTestId("stats-memory"));
+    expect(open).toHaveBeenCalled();
+    cleanup();
+    render(
+      <InspectPanel agent={undefined} memories={s.recalled} initialTab="memory" onClose={() => {}} />,
+    );
+    expect(screen.getByTestId("memory-list").textContent).toContain("fact");
+    expect(screen.getByTestId("memory-list").textContent).toContain("sky is blue");
   });
 });
 

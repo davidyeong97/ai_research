@@ -8,6 +8,7 @@ describe("statusLabels", () => {
       SEARCHING: "Searching Web 🌐",
       SPEAKING: "Debating ⚔️",
       FACT_CHECKING: "Fact-Checking 🔍",
+      RECALL: "Recalling 🧠",
       CONSENSUS: "Consensus Achieved ✅",
       PAUSED: "Paused ⏸️",
       DONE: "Done 🏁",
