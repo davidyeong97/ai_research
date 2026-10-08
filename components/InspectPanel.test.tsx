@@ -62,9 +62,9 @@ describe("InspectPanel", () => {
     expect(screen.getByText("thought")).toBeTruthy();
     const link = screen.getByText("Ex").closest("a")!;
     expect(link.getAttribute("rel")).toContain("noopener");
-    expect(screen.getAllByRole("link").every((l) => l.getAttribute("href")?.startsWith("http"))).toBe(
-      true,
-    );
+    expect(
+      screen.getAllByRole("link").every((l) => l.getAttribute("href")?.startsWith("http")),
+    ).toBe(true);
   });
 
   it("closes via button, Escape, and backdrop", () => {

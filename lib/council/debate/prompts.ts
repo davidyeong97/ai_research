@@ -79,7 +79,8 @@ export type PromptBuilder = (ctx: PromptContext) => ChatMessage[];
 /** Hook: builds the lead's final synthesis prompt. */
 export type SynthesisPromptBuilder = (ctx: SynthesisContext) => ChatMessage[];
 
-const fmt = (e: HistoryEntry) => wrapPeerMessage(e.agentId, e.text, { role: e.role, round: e.round });
+const fmt = (e: HistoryEntry) =>
+  wrapPeerMessage(e.agentId, e.text, { role: e.role, round: e.round });
 
 /** Peers' most recent message (one per peer) before `round`. */
 export function latestPeerMessages(ctx: PromptContext): HistoryEntry[] {
@@ -107,7 +108,10 @@ export const buildAgentPrompt: PromptBuilder = (ctx) => {
         role: "system",
         content: `${system} Give your own independent proposal; you have not seen the other members' views.`,
       },
-      { role: "user", content: userContent(att ? `${query}\n\n${att}` : query, ctx.attachments?.media) },
+      {
+        role: "user",
+        content: userContent(att ? `${query}\n\n${att}` : query, ctx.attachments?.media),
+      },
     ];
   }
   const peers = latestPeerMessages(ctx);
@@ -115,9 +119,15 @@ export const buildAgentPrompt: PromptBuilder = (ctx) => {
   const parts = [
     `Question:\n${query}`,
     att,
-    ctx.summary ? `Summary of the debate so far (rounds 1-${round - 1}):\n${wrapPeerSummary(ctx.summary)}` : "",
-    ctx.factCheck ? `Fact-check of round-1 claims (verify before relying on them):\n${wrapFactCheck(ctx.factCheck)}` : "",
-    own ? `Your previous position:\n${wrapPeerMessage(own.agentId, own.text, { role: own.role, round: own.round })}` : "",
+    ctx.summary
+      ? `Summary of the debate so far (rounds 1-${round - 1}):\n${wrapPeerSummary(ctx.summary)}`
+      : "",
+    ctx.factCheck
+      ? `Fact-check of round-1 claims (verify before relying on them):\n${wrapFactCheck(ctx.factCheck)}`
+      : "",
+    own
+      ? `Your previous position:\n${wrapPeerMessage(own.agentId, own.text, { role: own.role, round: own.round })}`
+      : "",
     `Other members' positions from round ${round - 1}:\n${peers.map(fmt).join("\n\n") || "(none)"}`,
     "Critique and rebut weak points in their positions, acknowledge strong ones, and refine your own proposal.",
   ].filter(Boolean);
@@ -177,7 +187,9 @@ export function buildSummaryPrompt(ctx: SummaryContext): ChatMessage[] {
       role: "user",
       content: [
         `Question:\n${ctx.query}`,
-        ctx.previousSummary ? `Summary of earlier rounds:\n${wrapPeerSummary(ctx.previousSummary)}` : "",
+        ctx.previousSummary
+          ? `Summary of earlier rounds:\n${wrapPeerSummary(ctx.previousSummary)}`
+          : "",
         `Transcript (through round ${ctx.upToRound}):\n${transcript || "(none)"}`,
         "Write the compact summary.",
       ]

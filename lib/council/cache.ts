@@ -25,14 +25,18 @@ export function cacheTtlMs(): number {
 const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, " ");
 
 const sha = (d: Uint8Array | string) =>
-  createHash("sha256").update(typeof d === "string" ? Buffer.from(d, "base64") : d).digest("hex");
+  createHash("sha256")
+    .update(typeof d === "string" ? Buffer.from(d, "base64") : d)
+    .digest("hex");
 
 /** Normalized text plus a sha256 for every media part, so different media never collide. */
 function canonContent(content: MessageContent): [string, ...string[]] {
   const media =
     typeof content === "string"
       ? []
-      : content.flatMap((p) => (p.type === "text" ? [] : [`${p.type}:${p.mediaType}:${sha(p.data)}`]));
+      : content.flatMap((p) =>
+          p.type === "text" ? [] : [`${p.type}:${p.mediaType}:${sha(p.data)}`],
+        );
   return [norm(textOf(content)), ...media];
 }
 
@@ -52,7 +56,11 @@ export function cacheKey(req: {
   return createHash("sha256").update(canonical).digest("hex");
 }
 
-export function cacheGet(db: DB = getDb(), key: string, now = Date.now()): CachedToolResult | undefined {
+export function cacheGet(
+  db: DB = getDb(),
+  key: string,
+  now = Date.now(),
+): CachedToolResult | undefined {
   if (!cacheEnabled()) return undefined;
   const row = db.select().from(schema.toolCache).where(eq(schema.toolCache.key, key)).get();
   if (!row) return undefined;

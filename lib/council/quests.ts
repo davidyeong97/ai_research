@@ -8,11 +8,7 @@ import { buildAgentPrompt } from "./debate/prompts";
 import { costCapFromEnv } from "./budget";
 import { OpenRouterClient, type LLMClient } from "./llm";
 import { LeadOrchestrator } from "./orchestrator";
-import {
-  UploadError,
-  linkToSession,
-  resolveUnlinkedAttachments,
-} from "./attachments";
+import { UploadError, linkToSession, resolveUnlinkedAttachments } from "./attachments";
 import { buildAttachmentContext, type AttachmentMeta } from "./debate/attachment-context";
 
 export const DEFAULT_ATTACHMENT_QUERY = "Analyze the attached file(s).";
@@ -93,7 +89,11 @@ export async function createQuest(
     })
     .run();
   if (records.length) {
-    linkToSession(records.map((r) => r.id), questId, db);
+    linkToSession(
+      records.map((r) => r.id),
+      questId,
+      db,
+    );
     bus.publish({
       questId,
       round: 0,
@@ -133,7 +133,10 @@ export async function createQuest(
     });
     flow = approval.then(async (r) => {
       if (r === "approved") {
-        db.update(schema.sessions).set({ status: "running" }).where(eq(schema.sessions.id, questId)).run();
+        db.update(schema.sessions)
+          .set({ status: "running" })
+          .where(eq(schema.sessions.id, questId))
+          .run();
         return run();
       }
       db.update(schema.sessions)

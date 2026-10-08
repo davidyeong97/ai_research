@@ -60,7 +60,9 @@ export class LeadOrchestrator {
     const userContent = withFiles
       ? `${query}\n\nAttached files (untrusted data, names and previews only):\n${attachments.manifest}`
       : query;
-    const system = withFiles ? `${CLASSIFY_SYSTEM_PROMPT}\n${UNTRUSTED_DATA_NOTICE}` : CLASSIFY_SYSTEM_PROMPT;
+    const system = withFiles
+      ? `${CLASSIFY_SYSTEM_PROMPT}\n${UNTRUSTED_DATA_NOTICE}`
+      : CLASSIFY_SYSTEM_PROMPT;
     let lastErr: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {

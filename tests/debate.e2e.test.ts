@@ -47,12 +47,15 @@ function setup(complexity: number, agentResponse?: () => MockResponse | string) 
 
 async function startQuest(query = "How should we design this?") {
   const { POST } = await import("@/app/api/quests/route");
-  const res = await POST(new Request("http://x/api/quests", { method: "POST", body: JSON.stringify({ query }) }));
+  const res = await POST(
+    new Request("http://x/api/quests", { method: "POST", body: JSON.stringify({ query }) }),
+  );
   expect(res.status).toBe(201);
   const { questId, plan } = await res.json();
   return { questId: questId as string, plan };
 }
-const terminal = (id: string) => bus.replay(id).some((e) => e.action === "DONE" || e.action === "ERROR");
+const terminal = (id: string) =>
+  bus.replay(id).some((e) => e.action === "DONE" || e.action === "ERROR");
 const finished = (id: string) => waitFor(() => terminal(id), "terminal event");
 
 async function control(id: string, body: unknown) {
@@ -122,13 +125,19 @@ describe("Phase 2 debate e2e", () => {
     const ev = bus.replay(questId);
     expect(ev.at(-1)!.action).toBe("DONE");
     expect(ev.at(-1)!.data.finalAnswer).toBeTruthy();
-    expect(new Set(ev.filter((e) => e.action === "SPEAKING").map((e) => e.round))).toEqual(new Set([1, 2, 3]));
+    expect(new Set(ev.filter((e) => e.action === "SPEAKING").map((e) => e.round))).toEqual(
+      new Set([1, 2, 3]),
+    );
 
     const summaryIdx = ev.findIndex((e) => e.data.summary === true);
     expect(summaryIdx).toBeGreaterThan(-1);
     expect(ev[summaryIdx].round).toBe(3);
-    const lastRound2 = ev.map((e, i) => (e.round === 2 && e.action === "SPEAKING" ? i : -1)).reduce((a, b) => Math.max(a, b));
-    const firstRound3Agent = ev.findIndex((e) => e.round === 3 && e.action === "THINKING" && e.agentId !== "lead");
+    const lastRound2 = ev
+      .map((e, i) => (e.round === 2 && e.action === "SPEAKING" ? i : -1))
+      .reduce((a, b) => Math.max(a, b));
+    const firstRound3Agent = ev.findIndex(
+      (e) => e.round === 3 && e.action === "THINKING" && e.agentId !== "lead",
+    );
     expect(summaryIdx).toBeGreaterThan(lastRound2);
     expect(summaryIdx).toBeLessThan(firstRound3Agent);
     expect(llm.calls.filter(isSummaryCall)).toHaveLength(1);
@@ -154,6 +163,7 @@ describe("Phase 2 debate e2e", () => {
     const gate = new Promise<void>((r) => (release = r));
     const inner = llm;
     setLLMClient({
+      embed: (p) => inner.embed(p),
       async *streamChat(p) {
         if (isAgentCall(p) && inner.calls.filter(isAgentCall).length === 0) await gate;
         yield* inner.streamChat(p);
@@ -164,7 +174,9 @@ describe("Phase 2 debate e2e", () => {
     const n = plan.executionPlan.assignedAgents.length;
     await tick(30);
     expect((await control(questId, { action: "pause" })).status).toBe(200);
-    expect((await control(questId, { action: "inject", text: "Prioritise latency" })).status).toBe(200);
+    expect((await control(questId, { action: "inject", text: "Prioritise latency" })).status).toBe(
+      200,
+    );
     release();
     // Round 1 agent 1 finishes, then the checkpoint before agent 2 pauses.
     await waitFor(() => bus.replay(questId).some((e) => e.action === "PAUSED"), "PAUSED");
@@ -178,7 +190,10 @@ describe("Phase 2 debate e2e", () => {
 
     const ev = bus.replay(questId);
     expect(ev.at(-1)!.action).toBe("DONE");
-    expect(ev.filter((e) => e.action === "PAUSED").map((e) => e.data.paused)).toEqual([true, false]);
+    expect(ev.filter((e) => e.action === "PAUSED").map((e) => e.data.paused)).toEqual([
+      true,
+      false,
+    ]);
 
     const users = ev.filter((e) => e.agentId === "user");
     expect(users).toHaveLength(1);
@@ -196,7 +211,10 @@ describe("Phase 2 debate e2e", () => {
 
   it("budget cap stop ends cleanly with an ERROR event and no further turns", async () => {
     // Each agent reply reports huge usage so the 30k cap is hit during round 1.
-    setup(3, () => ({ text: "expensive", usage: { promptTokens: 20_000, completionTokens: 5_000 } }));
+    setup(3, () => ({
+      text: "expensive",
+      usage: { promptTokens: 20_000, completionTokens: 5_000 },
+    }));
     const { questId } = await startQuest();
     await finished(questId);
 
@@ -228,7 +246,10 @@ describe("Phase 2 debate e2e", () => {
 
     const cut = 5;
     const rest = await readSse(
-      await GET(new Request("http://x/s", { headers: { "last-event-id": String(cut) } }), params(questId)),
+      await GET(
+        new Request("http://x/s", { headers: { "last-event-id": String(cut) } }),
+        params(questId),
+      ),
     );
     expect(rest.map((e) => e.id)).toEqual(all.slice(cut).map((e) => e.id));
     expect(rest.every((e) => e.id > cut)).toBe(true);
@@ -238,7 +259,10 @@ describe("Phase 2 debate e2e", () => {
     const ac = new AbortController();
     const caughtUp = readSse(
       await GET(
-        new Request("http://x/s", { headers: { "last-event-id": String(all.length) }, signal: ac.signal }),
+        new Request("http://x/s", {
+          headers: { "last-event-id": String(all.length) },
+          signal: ac.signal,
+        }),
         params(questId),
       ),
     );
@@ -246,5 +270,4 @@ describe("Phase 2 debate e2e", () => {
     ac.abort();
     expect(await caughtUp).toHaveLength(0);
   });
-
 });

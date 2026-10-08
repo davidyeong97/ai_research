@@ -14,7 +14,10 @@ beforeAll(async () => {
 
 async function get(id: string, format?: string) {
   const { GET } = await import("@/app/api/quests/[id]/export/route");
-  return GET(new Request(`http://x/api/quests/${id}/export${format ? `?format=${format}` : ""}`), params(id));
+  return GET(
+    new Request(`http://x/api/quests/${id}/export${format ? `?format=${format}` : ""}`),
+    params(id),
+  );
 }
 
 describe("GET /api/quests/[id]/export", () => {
@@ -34,7 +37,9 @@ describe("GET /api/quests/[id]/export", () => {
 
     const md = await get(questId);
     expect(md.status).toBe(200);
-    expect(md.headers.get("content-disposition")).toBe(`attachment; filename="council-${questId}.md"`);
+    expect(md.headers.get("content-disposition")).toBe(
+      `attachment; filename="council-${questId}.md"`,
+    );
     const text = await md.text();
     expect(text).toContain("# What is up?");
     expect(text).toContain("## Plan");
@@ -47,7 +52,13 @@ describe("GET /api/quests/[id]/export", () => {
     const js = await get(questId, "json");
     expect(js.headers.get("content-disposition")).toContain(`council-${questId}.json`);
     const body = await js.json();
-    expect(Object.keys(body).sort()).toEqual(["agentMessages", "attachments", "events", "plan", "session"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "agentMessages",
+      "attachments",
+      "events",
+      "plan",
+      "session",
+    ]);
     expect(body.session.id).toBe(questId);
     expect(body.events.length).toBeGreaterThan(0);
     expect(body.agentMessages.length).toBeGreaterThan(0);

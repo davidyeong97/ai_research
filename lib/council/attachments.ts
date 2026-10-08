@@ -12,8 +12,26 @@ export const MAX_TOTAL_BYTES = 25 * 1024 * 1024;
 export const STALE_UPLOAD_MS = 24 * 3_600_000;
 
 export const TEXT_EXTENSIONS = new Set([
-  "txt", "md", "csv", "json", "ts", "tsx", "js", "py", "java", "go", "rs", "c", "cpp",
-  "html", "css", "yaml", "yml", "xml", "sql", "sh",
+  "txt",
+  "md",
+  "csv",
+  "json",
+  "ts",
+  "tsx",
+  "js",
+  "py",
+  "java",
+  "go",
+  "rs",
+  "c",
+  "cpp",
+  "html",
+  "css",
+  "yaml",
+  "yml",
+  "xml",
+  "sql",
+  "sh",
 ]);
 
 export class UploadError extends Error {
@@ -37,7 +55,10 @@ export function uploadsDir(): string {
 
 /** Strip any path components and unsafe characters from a client-supplied filename. */
 export function sanitizeFilename(name: string): string {
-  let base = String(name ?? "").split(/[\\/]/).pop() ?? "";
+  let base =
+    String(name ?? "")
+      .split(/[\\/]/)
+      .pop() ?? "";
   base = base
     .normalize("NFKC")
     .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, "")
@@ -56,13 +77,18 @@ function startsWith(b: Uint8Array, sig: number[], offset = 0): boolean {
 }
 
 function detectBinary(b: Uint8Array): { mime: string; kind: AttachmentKind } | null {
-  if (startsWith(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return { mime: "image/png", kind: "image" };
+  if (startsWith(b, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    return { mime: "image/png", kind: "image" };
   if (startsWith(b, [0xff, 0xd8, 0xff])) return { mime: "image/jpeg", kind: "image" };
-  if (startsWith(b, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) || startsWith(b, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61]))
+  if (
+    startsWith(b, [0x47, 0x49, 0x46, 0x38, 0x37, 0x61]) ||
+    startsWith(b, [0x47, 0x49, 0x46, 0x38, 0x39, 0x61])
+  )
     return { mime: "image/gif", kind: "image" };
   if (startsWith(b, [0x52, 0x49, 0x46, 0x46]) && startsWith(b, [0x57, 0x45, 0x42, 0x50], 8))
     return { mime: "image/webp", kind: "image" };
-  if (startsWith(b, [0x25, 0x50, 0x44, 0x46, 0x2d])) return { mime: "application/pdf", kind: "pdf" };
+  if (startsWith(b, [0x25, 0x50, 0x44, 0x46, 0x2d]))
+    return { mime: "application/pdf", kind: "pdf" };
   return null;
 }
 
@@ -78,9 +104,11 @@ function isUtf8Text(b: Uint8Array): boolean {
 
 /** Validate and persist an uploaded file. Throws UploadError (413/415). */
 export async function saveUpload(file: File, db: DB = getDb()): Promise<AttachmentRecord> {
-  if (file.size > maxUploadBytes()) throw new UploadError(413, `File too large: ${sanitizeFilename(file.name)}`);
+  if (file.size > maxUploadBytes())
+    throw new UploadError(413, `File too large: ${sanitizeFilename(file.name)}`);
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (bytes.byteLength > maxUploadBytes()) throw new UploadError(413, `File too large: ${sanitizeFilename(file.name)}`);
+  if (bytes.byteLength > maxUploadBytes())
+    throw new UploadError(413, `File too large: ${sanitizeFilename(file.name)}`);
   if (bytes.byteLength === 0) throw new UploadError(400, "Empty file");
   const filename = sanitizeFilename(file.name);
   const ext = path.extname(filename).slice(1).toLowerCase();
@@ -149,17 +177,28 @@ export function linkToSession(ids: string[], sessionId: string, db: DB = getDb()
   const unique = [...new Set(ids)];
   if (unique.length === 0) return;
   db.transaction((tx) => {
-    const rows = tx.select().from(schema.attachments).where(inArray(schema.attachments.id, unique)).all();
+    const rows = tx
+      .select()
+      .from(schema.attachments)
+      .where(inArray(schema.attachments.id, unique))
+      .all();
     if (rows.length !== unique.length) throw new UploadError(404, "Unknown attachment id");
     if (rows.some((r) => r.sessionId && r.sessionId !== sessionId)) {
       throw new UploadError(409, "Attachment already used by another quest");
     }
-    tx.update(schema.attachments).set({ sessionId }).where(inArray(schema.attachments.id, unique)).run();
+    tx.update(schema.attachments)
+      .set({ sessionId })
+      .where(inArray(schema.attachments.id, unique))
+      .run();
   });
 }
 
 export function listSessionAttachments(sessionId: string, db: DB = getDb()): AttachmentRecord[] {
-  return db.select().from(schema.attachments).where(eq(schema.attachments.sessionId, sessionId)).all();
+  return db
+    .select()
+    .from(schema.attachments)
+    .where(eq(schema.attachments.sessionId, sessionId))
+    .all();
 }
 
 export async function deleteAttachments(ids: string[], db: DB = getDb()): Promise<void> {
@@ -176,11 +215,19 @@ export async function deleteAttachments(ids: string[], db: DB = getDb()): Promis
 }
 
 /** Delete unlinked uploads older than 24h. Returns number purged. */
-export async function purgeStaleUploads(db: DB = getDb(), now: number = Date.now()): Promise<number> {
+export async function purgeStaleUploads(
+  db: DB = getDb(),
+  now: number = Date.now(),
+): Promise<number> {
   const stale = db
     .select({ id: schema.attachments.id })
     .from(schema.attachments)
-    .where(and(isNull(schema.attachments.sessionId), lt(schema.attachments.createdAt, now - STALE_UPLOAD_MS)))
+    .where(
+      and(
+        isNull(schema.attachments.sessionId),
+        lt(schema.attachments.createdAt, now - STALE_UPLOAD_MS),
+      ),
+    )
     .all();
   await deleteAttachments(
     stale.map((r) => r.id),
@@ -196,8 +243,13 @@ export function resolveUnlinkedAttachments(ids: string[], db: DB = getDb()): Att
     throw new UploadError(400, `Too many attachments (max ${MAX_ATTACHMENTS})`);
   }
   if (unique.length === 0) return [];
-  const rows = db.select().from(schema.attachments).where(inArray(schema.attachments.id, unique)).all();
+  const rows = db
+    .select()
+    .from(schema.attachments)
+    .where(inArray(schema.attachments.id, unique))
+    .all();
   if (rows.length !== unique.length) throw new UploadError(404, "Unknown attachment id");
-  if (rows.some((r) => r.sessionId)) throw new UploadError(409, "Attachment already used by another quest");
+  if (rows.some((r) => r.sessionId))
+    throw new UploadError(409, "Attachment already used by another quest");
   return unique.map((id) => rows.find((r) => r.id === id)!);
 }

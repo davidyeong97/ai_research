@@ -1,6 +1,7 @@
 import type { CouncilAction, CouncilEvent, OrchestrationPlan } from "@/lib/shared";
 
-export type AgentStatus = CouncilAction | "IDLE";
+/** RECALL is a one-shot event, never an agent status (later bead may change this). */
+export type AgentStatus = Exclude<CouncilAction, "RECALL"> | "IDLE";
 
 export interface AgentState {
   id: string;
@@ -34,13 +35,7 @@ export interface InspectSelection {
 }
 
 export type TranscriptKind =
-  | "message"
-  | "status"
-  | "final"
-  | "error"
-  | "director"
-  | "quest"
-  | "digest";
+  "message" | "status" | "final" | "error" | "director" | "quest" | "digest";
 
 export interface AttachmentRef {
   id: string;
@@ -223,12 +218,23 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "FACT_CHECKING":
     case "CONSENSUS": {
       const status = str(d.statusMessage);
+      const action = e.action;
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({
         ...a,
-        status: e.action,
+        status: action,
         latestLine: status ?? a.latestLine,
       }));
       if (status) next.transcript = [...state.transcript, entry("status", status)];
+      return next;
+    }
+    case "RECALL": {
+      // Minimal rendering; richer memory UI is a later bead.
+      const count = num(d.count) ?? 0;
+      const preview = Array.isArray(d.preview)
+        ? d.preview.filter((p): p is string => typeof p === "string").join(" | ")
+        : (str(d.preview) ?? "");
+      const text = `Recalled ${count} ${count === 1 ? "memory" : "memories"}${preview ? `: ${preview}` : ""}`;
+      next.transcript = [...state.transcript, entry("status", text)];
       return next;
     }
     case "PAUSED": {

@@ -1,4 +1,7 @@
-export type FetchLike = (url: string, init?: { signal?: AbortSignal }) => Promise<{
+export type FetchLike = (
+  url: string,
+  init?: { signal?: AbortSignal },
+) => Promise<{
   ok: boolean;
   json(): Promise<unknown>;
 }>;
@@ -43,7 +46,8 @@ export function resetCapabilities(): void {
 export function loadCapabilities(): Promise<void> {
   if (live) return Promise.resolve();
   if (loading) return loading;
-  const f = fetchImpl ?? (typeof fetch === "function" ? (fetch as unknown as FetchLike) : undefined);
+  const f =
+    fetchImpl ?? (typeof fetch === "function" ? (fetch as unknown as FetchLike) : undefined);
   if (!f) return Promise.resolve();
   loading = (async () => {
     try {
