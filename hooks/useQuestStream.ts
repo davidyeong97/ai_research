@@ -15,16 +15,25 @@ export interface UseQuestStream {
   starting: boolean;
   /** Connection or request error (distinct from a quest ERROR event). */
   connectionError: string | null;
-  start: (query: string) => Promise<void>;
+  /** True while attachments are being uploaded. */
+  uploading: boolean;
+  /** Upload files (if any) then start the quest. Resolves true on success. */
+  start: (query: string, files?: File[]) => Promise<boolean>;
   /** Pause/resume/inject guidance. Resolves true on success. */
   control: (action: "pause" | "resume" | "inject", text?: string) => Promise<boolean>;
   /** Answer the plan-approval gate. */
   approve: (approved: boolean) => Promise<boolean>;
 }
 
+function errorText(body: unknown, status: number): string {
+  const err = (body as { error?: unknown } | null)?.error;
+  return typeof err === "string" ? err : `Request failed (${status})`;
+}
+
 export function useQuestStream(): UseQuestStream {
   const [state, dispatch] = useReducer(questReducer, initialQuestState);
   const [starting, setStarting] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -90,29 +99,49 @@ export function useQuestStream(): UseQuestStream {
   }, [connect]);
 
   const start = useCallback(
-    async (query: string) => {
+    async (query: string, files: File[] = []): Promise<boolean> => {
       close();
       lastIdRef.current = 0;
       setConnectionError(null);
       setStarting(true);
       try {
+        let attachmentIds: string[] | undefined;
+        if (files.length > 0) {
+          setUploading(true);
+          try {
+            const form = new FormData();
+            for (const f of files) form.append("files", f);
+            const up = await fetch("/api/uploads", { method: "POST", body: form });
+            const upBody: unknown = await up.json().catch(() => null);
+            if (!up.ok) throw new Error(errorText(upBody, up.status));
+            const list = (upBody as { attachments?: unknown } | null)?.attachments;
+            attachmentIds = Array.isArray(list)
+              ? list.flatMap((a) => {
+                  const id = (a as { id?: unknown } | null)?.id;
+                  return typeof id === "string" ? [id] : [];
+                })
+              : [];
+            if (attachmentIds.length !== files.length) throw new Error("Upload failed");
+          } finally {
+            setUploading(false);
+          }
+        }
         const res = await fetch("/api/quests", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify(attachmentIds ? { query, attachmentIds } : { query }),
         });
         const body: unknown = await res.json().catch(() => null);
-        if (!res.ok) {
-          const err = (body as { error?: unknown } | null)?.error;
-          throw new Error(typeof err === "string" ? err : `Request failed (${res.status})`);
-        }
+        if (!res.ok) throw new Error(errorText(body, res.status));
         const questId = (body as { questId?: unknown } | null)?.questId;
         const plan = OrchestrationPlanSchema.safeParse((body as { plan?: unknown } | null)?.plan);
         if (typeof questId !== "string" || !plan.success) throw new Error("Malformed response");
         dispatch({ type: "start", questId, plan: plan.data });
         connect(questId, genRef.current, 0);
+        return true;
       } catch (e) {
         setConnectionError(e instanceof Error ? e.message : "Failed to start quest");
+        return false;
       } finally {
         setStarting(false);
       }
@@ -166,5 +195,5 @@ export function useQuestStream(): UseQuestStream {
     };
   }, []);
 
-  return { state, starting, connectionError, start, control, approve };
+  return { state, starting, uploading, connectionError, start, control, approve };
 }

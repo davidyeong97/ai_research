@@ -33,7 +33,20 @@ export interface InspectSelection {
   entryId?: number;
 }
 
-export type TranscriptKind = "message" | "status" | "final" | "error" | "director";
+export type TranscriptKind =
+  | "message"
+  | "status"
+  | "final"
+  | "error"
+  | "director"
+  | "quest"
+  | "digest";
+
+export interface AttachmentRef {
+  id: string;
+  filename: string;
+  kind: "image" | "pdf" | "text";
+}
 
 export interface PendingApproval {
   plan: {
@@ -44,6 +57,7 @@ export interface PendingApproval {
   };
   estimatedMaxTokens: number | null;
   estimatedMaxCostUsd: number | null;
+  attachments: AttachmentRef[];
 }
 
 export interface TranscriptEntry {
@@ -60,6 +74,7 @@ export interface TranscriptEntry {
   model?: string;
   costUsd?: number;
   latencyMs?: number;
+  attachments?: AttachmentRef[];
 }
 
 export type QuestPhase = "idle" | "running" | "done" | "error";
@@ -128,6 +143,17 @@ const num = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? v : undefined;
 const rec = (v: unknown): Record<string, unknown> | undefined =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+
+function parseAttachments(v: unknown): AttachmentRef[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((a): AttachmentRef[] => {
+    const r = rec(a);
+    const id = str(r?.id);
+    const kind = str(r?.kind);
+    if (!id || (kind !== "image" && kind !== "pdf" && kind !== "text")) return [];
+    return [{ id, filename: str(r?.filename) ?? id, kind }];
+  });
+}
 
 function parseCitations(v: unknown): Citation[] | undefined {
   if (!Array.isArray(v)) return undefined;
@@ -224,6 +250,7 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
           },
           estimatedMaxTokens: num(d.estimatedMaxTokens) ?? null,
           estimatedMaxCostUsd: num(d.estimatedMaxCostUsd) ?? null,
+          attachments: parseAttachments(d.attachments),
         };
         return next;
       }
@@ -258,8 +285,25 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "SPEAKING": {
       const rawMessage = str(d.message) ?? str(d.text) ?? "";
       const message = d.factCheck === true ? `Fact-check 🔍: ${rawMessage}` : rawMessage;
+      if (e.agentId === "user" && d.userQuery === true) {
+        next.transcript = [
+          ...state.transcript,
+          { ...entry("quest", rawMessage), attachments: parseAttachments(d.attachments) },
+        ];
+        return next;
+      }
       if (e.agentId === "user") {
         next.transcript = [...state.transcript, entry("director", message)];
+        return next;
+      }
+      if (d.attachmentDigest === true) {
+        next.agents = patchAgent(state.agents, e.agentId, (a) => ({
+          ...a,
+          status: "SPEAKING",
+          tokensUsed: a.tokensUsed + e.tokensUsed,
+          costUsd: a.costUsd + (num(d.costUsd) ?? 0),
+        }));
+        next.transcript = [...state.transcript, entry("digest", rawMessage)];
         return next;
       }
       const budget = rec(d.budget);
