@@ -5,6 +5,7 @@ import { costCapFromEnv } from "../budget";
 import { sanitizeText } from "../debate/sanitize";
 import { collectChat, type LLMClient } from "../llm";
 import { memoryEnabled, memoryModel } from "./config";
+import { noteExtraction } from "./consolidate";
 import { insertMemory, MEMORY_KINDS } from "./store";
 
 /**
@@ -162,6 +163,7 @@ export async function extractMemories(
       );
       if (res) stored++;
     }
+    if (stored > 0) noteExtraction({ db, llm: deps.llm });
     return stored;
   } catch (e) {
     console.warn(`[memory] extraction failed for ${questId}:`, e instanceof Error ? e.message : e);

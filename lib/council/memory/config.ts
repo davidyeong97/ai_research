@@ -18,3 +18,6 @@ export const memoryRecallK = (): number => intEnv("MEMORY_RECALL_K", 5);
 export const memoryMaxInjectChars = (): number => intEnv("MEMORY_MAX_INJECT_CHARS", 1200);
 export const memoryMaxRows = (): number =>
   Math.min(intEnv("MEMORY_MAX_ROWS", 2000), MEMORY_ROWS_HARD_CAP);
+export const memoryConsolidateEnabled = (): boolean =>
+  (process.env.MEMORY_CONSOLIDATE ?? "true").trim().toLowerCase() !== "false";
+export const memoryDecayDays = (): number => intEnv("MEMORY_DECAY_DAYS", 60);
