@@ -1,4 +1,4 @@
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, gte, inArray } from "drizzle-orm";
 import { getDb, schema, type DB } from "../db";
 import type { CouncilEvent, OrchestrationPlan } from "../shared";
 import { getBus, type EventBus } from "./bus";
@@ -15,7 +15,7 @@ import { createQuest, planSummary, type QuestDeps } from "./quests";
 export type QuestSource = "web" | "mcp";
 export type ControlAction = "pause" | "resume" | "inject" | "cancel";
 
-export type ServiceErrorCode = "invalid" | "not_found" | "conflict";
+export type ServiceErrorCode = "invalid" | "not_found" | "conflict" | "limit";
 
 export class ServiceError extends Error {
   readonly name = "ServiceError";
@@ -27,7 +27,13 @@ export class ServiceError extends Error {
     super(message);
   }
   get httpStatus(): number {
-    return this.code === "invalid" ? 400 : this.code === "not_found" ? 404 : 409;
+    return this.code === "invalid"
+      ? 400
+      : this.code === "not_found"
+        ? 404
+        : this.code === "limit"
+          ? 429
+          : 409;
   }
 }
 
@@ -68,10 +74,58 @@ export interface StartQuestResult {
   done: Promise<void>;
 }
 
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+/** Guardrails for machine (MCP) clients; throws ServiceError("limit"). */
+function enforceMcpLimits(db: DB): void {
+  const maxConcurrent = Math.floor(envNumber("MCP_MAX_CONCURRENT", 2));
+  const active = db
+    .select({ id: schema.sessions.id })
+    .from(schema.sessions)
+    .where(
+      and(
+        eq(schema.sessions.source, "mcp"),
+        inArray(schema.sessions.status, ["running", "awaiting_approval"]),
+      ),
+    )
+    .all().length;
+  if (active >= maxConcurrent) {
+    throw new ServiceError(
+      "limit",
+      `Too many concurrent MCP quests (${active}/${maxConcurrent}). Wait for a running quest to finish or cancel one, then retry.`,
+      "mcp_max_concurrent",
+    );
+  }
+  const dailyCap = envNumber("MCP_DAILY_COST_USD", 2.0);
+  const since = Date.now() - 24 * 3600 * 1000;
+  const spent = db
+    .select({ cost: schema.sessions.totalCostUsd })
+    .from(schema.sessions)
+    .where(and(eq(schema.sessions.source, "mcp"), gte(schema.sessions.createdAt, since)))
+    .all()
+    .reduce((sum, r) => sum + (r.cost ?? 0), 0);
+  if (spent >= dailyCap) {
+    throw new ServiceError(
+      "limit",
+      `Daily MCP spend cap reached ($${spent.toFixed(2)} of $${dailyCap.toFixed(2)} in the last 24h). Try again later or raise MCP_DAILY_COST_USD.`,
+      "mcp_daily_cost",
+    );
+  }
+}
+
 export async function startQuest(input: StartQuestInput, deps: ServiceDeps = {}): Promise<StartQuestResult> {
   const query = input.query?.trim() ?? "";
   if (!query && !input.attachmentIds?.length) throw new ServiceError("invalid", "query is required");
   let costCapUsd = costCapFromEnv();
+  if (input.source === "mcp") {
+    enforceMcpLimits(deps.db ?? getDb());
+    costCapUsd = Math.min(costCapUsd, envNumber("MCP_DEFAULT_MAX_COST_USD", 0.3) || costCapUsd);
+  }
   if (input.maxCostUsd !== undefined) {
     if (!Number.isFinite(input.maxCostUsd) || input.maxCostUsd <= 0) {
       throw new ServiceError("invalid", "maxCostUsd must be a positive number");
