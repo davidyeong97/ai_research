@@ -91,3 +91,31 @@ describe("InspectPanel", () => {
     expect(document.activeElement).toBe(opener);
   });
 });
+
+describe("full text, thinking and cut-off marker", () => {
+  const long = "lorem ipsum ".repeat(1500).trim();
+  const thinking = "ponder ".repeat(1500).trim();
+
+  it("TranscriptPanel shows full text, full thinking and (cut off)", () => {
+    const e: TranscriptEntry = { ...entry, text: long, thought: thinking, truncated: true };
+    render(<TranscriptPanel entries={[e]} />);
+    expect(screen.getByTestId("transcript-entry").textContent).toContain(long);
+    expect(screen.getByTestId("thinking-text").textContent).toBe(thinking);
+    expect(screen.getByTestId("cut-off-marker").textContent).toContain("cut off");
+  });
+
+  it("TranscriptPanel omits the marker and thinking when absent", () => {
+    render(<TranscriptPanel entries={[{ ...entry, thought: undefined }]} />);
+    expect(screen.queryByTestId("cut-off-marker")).toBeNull();
+    expect(screen.queryByTestId("thinking-details")).toBeNull();
+  });
+
+  it("InspectPanel renders the full text and thought without truncation", () => {
+    const e: TranscriptEntry = { ...entry, text: long, thought: thinking, truncated: true };
+    render(<InspectPanel agent={agent} entry={e} onClose={() => {}} />);
+    expect(screen.getByTestId("inspect-panel").textContent).toContain(long);
+    expect(screen.getByTestId("cut-off-marker")).toBeTruthy();
+    fireEvent.click(screen.getByText(/Thought log/));
+    expect(document.getElementById("inspect-thought")?.textContent).toContain(thinking);
+  });
+});

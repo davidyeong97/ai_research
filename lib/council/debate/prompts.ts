@@ -98,11 +98,15 @@ export function lastOwnMessage(ctx: PromptContext): HistoryEntry | undefined {
   return [...ctx.history].reverse().find((e) => e.agentId === ctx.agent.id && e.round < ctx.round);
 }
 
+/** Keeps answers complete: a target length and no mid-sentence endings. */
+export const LENGTH_GUIDANCE =
+  "Give a complete, self-contained answer of about 150-350 words; plan it so it fits, and always finish your last sentence.";
+
 export const buildAgentPrompt: PromptBuilder = (ctx) => {
   const { agent, round, maxRounds, query } = ctx;
   const system =
     `You are the ${agent.role} of a council of AI experts debating a user's question. ` +
-    `This is round ${round} of ${maxRounds}. Stay in your role and be concise. ${UNTRUSTED_DATA_NOTICE}`;
+    `This is round ${round} of ${maxRounds}. Stay in your role. ${LENGTH_GUIDANCE} ${UNTRUSTED_DATA_NOTICE}`;
   const att = attachmentText(ctx.attachments);
   if (round === 1) {
     return [
@@ -154,6 +158,7 @@ export const buildSynthesisPrompt: SynthesisPromptBuilder = (ctx) => {
       content:
         "You are the lead of a council of AI experts. After the debate, synthesize the council's " +
         "positions into one clear, final answer for the user. Resolve disagreements and note caveats. " +
+        "Be complete and self-contained (typically 300-700 words), and always finish your last sentence. " +
         UNTRUSTED_DATA_NOTICE,
     },
     {
@@ -185,6 +190,7 @@ export function buildSummaryPrompt(ctx: SummaryContext): ChatMessage[] {
       content:
         "You are the lead of a council of AI experts. Summarize the debate so far in at most " +
         "400 tokens: each member's key positions, points of agreement, and open disagreements. " +
+        "Always finish your last sentence. " +
         "Be faithful and neutral; do not add new arguments. " +
         UNTRUSTED_DATA_NOTICE,
     },
@@ -225,7 +231,7 @@ export function buildFactCheckPrompt(ctx: FactCheckContext): ChatMessage[] {
         "Identify the concrete factual claims made by the other members, verify them" +
         (ctx.searchEnabled ? " (use web search where helpful)" : " from your own knowledge") +
         ", and give a concise verdict (at most 200 words): list each key claim as VERIFIED, DISPUTED " +
-        "or UNVERIFIED with a one-line reason. Do not add new proposals. " +
+        "or UNVERIFIED with a one-line reason. Do not add new proposals. Always finish your last sentence. " +
         UNTRUSTED_DATA_NOTICE,
     },
     {

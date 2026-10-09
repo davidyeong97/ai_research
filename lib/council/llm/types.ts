@@ -35,6 +35,8 @@ export interface StreamChatParams {
   models: string[];
   maxTokens: number;
   reasoning?: ReasoningOption;
+  /** Request a JSON-object response (OpenRouter response_format) where supported. */
+  jsonMode?: boolean;
   /** Enable OpenRouter web search (web plugin) for this call. */
   webSearch?: { maxResults: number };
   signal?: AbortSignal;
@@ -45,6 +47,8 @@ export interface LLMUsage {
   completionTokens: number;
   costUsd: number;
   modelUsed: string;
+  /** Provider finish reason; "length" means the output hit the token limit. */
+  finishReason?: string;
 }
 
 export interface Citation {

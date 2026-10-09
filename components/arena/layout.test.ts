@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderAgents, seatPositions, spriteScale } from "./layout";
+import { orderAgents, seatPositions, spriteScale, tableGeometry } from "./layout";
 
 describe("layout", () => {
   it("returns no seats for 0 agents", () => {
@@ -40,5 +40,37 @@ describe("layout", () => {
     const s = spriteScale(600, 500, 6);
     expect(Number.isInteger(s)).toBe(true);
     expect(s).toBeGreaterThanOrEqual(2);
+  });
+  it("shrinks the table and leaves headroom for the head seat", () => {
+    const t = tableGeometry(500, 500);
+    expect(t.rx).toBeLessThanOrEqual(500 * 0.2 * 0.8);
+    expect(t.ry).toBeLessThanOrEqual(500 * 0.17 * 0.8);
+    for (const [w, h] of [[360, 300], [500, 500], [900, 700]]) {
+      const [head] = seatPositions(5, w, h);
+      const px = 16 * spriteScale(w, h, 5);
+      expect(head.y - px - 30).toBeGreaterThanOrEqual(8);
+    }
+  });
+  it("keeps seats apart and off the table for 1-7 agents", () => {
+    for (const [w, h] of [[360, 300], [500, 500], [900, 700]]) {
+      const t = tableGeometry(w, h);
+      for (let n = 1; n <= 7; n++) {
+        const seats = seatPositions(n, w, h);
+        const px = 16 * spriteScale(w, h, n);
+        for (const s of seats) {
+          const d = ((s.x - t.cx) / t.rx) ** 2 + ((s.y - t.cy) / t.ry) ** 2;
+          expect(d).toBeGreaterThan(1);
+          expect(s.x - px / 2).toBeGreaterThanOrEqual(0);
+          expect(s.x + px / 2).toBeLessThanOrEqual(w);
+          expect(s.y + 26).toBeLessThanOrEqual(h);
+        }
+        for (let i = 0; i < n; i++)
+          for (let j = i + 1; j < n; j++) {
+            const dx = Math.abs(seats[i].x - seats[j].x);
+            const dy = Math.abs(seats[i].y - seats[j].y);
+            expect(dx >= px * 0.9 || dy >= px * 0.9).toBe(true);
+          }
+      }
+    }
   });
 });

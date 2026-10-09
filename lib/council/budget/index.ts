@@ -8,9 +8,9 @@ export type BudgetComplexity = 1 | 2 | 3 | 4 | 5;
 /** README §4.1 hard caps per quest. */
 export function defaultBudgetCap(complexity: number): number {
   if (!Number.isFinite(complexity)) throw new RangeError(`Invalid complexity: ${complexity}`);
-  if (complexity <= 2) return 10_000;
-  if (complexity <= 4) return 30_000;
-  return 50_000;
+  if (complexity <= 2) return 20_000;
+  if (complexity <= 4) return 60_000;
+  return 120_000;
 }
 
 export class BudgetExceeded extends Error {

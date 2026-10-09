@@ -10,6 +10,7 @@ import type { ChatMessage, ContentPart, LLMClient, LLMUsage } from "../llm";
 import { estimatePromptTokens, hasMedia, supportsPdf, supportsVision } from "../llm";
 import { LEAD_MODELS, multimodalLeadModels } from "../roster";
 import type { AttachmentContext } from "./attachment-context";
+import { debateLimits } from "./limits";
 import { sanitizeText } from "./sanitize";
 import {
   buildAgentPrompt,
@@ -50,6 +51,9 @@ export interface DebateOptions {
   summaryMaxTokens?: number;
   synthesisMaxTokens?: number;
   digestMaxTokens?: number;
+  factCheckMaxTokens?: number;
+  /** Extra output tokens for model reasoning, added on top of each visible budget. */
+  reasoningMaxTokens?: number;
   /** Quest attachments (untrusted); enables the digest step and media/text prompt inputs. */
   attachments?: AttachmentContext;
   /** Fenced long-term memory block injected into every agent's round-1 prompt only. */
@@ -57,11 +61,6 @@ export interface DebateOptions {
   /** Per-quest USD cap; defaults to MAX_COST_USD_PER_QUEST. Callers may only lower it. */
   costCapUsd?: number;
 }
-
-const AGENT_MAX_TOKENS = 400;
-const SYNTHESIS_MAX_TOKENS = 700;
-const DIGEST_MAX_TOKENS = 500;
-const SUMMARY_MAX_TOKENS = 500; // ~400-token target plus headroom
 
 export const DEFAULT_WEB_SEARCH_MAX_RESULTS = 3;
 
@@ -119,9 +118,13 @@ export async function runDebate(
   const buildPrompt = opts.buildPrompt ?? buildAgentPrompt;
   const buildSynthesis = opts.buildSynthesis ?? buildSynthesisPrompt;
   const checkpoint = opts.checkpoint ?? (() => undefined);
-  const agentMax = opts.agentMaxTokens ?? AGENT_MAX_TOKENS;
-  const summaryMax = opts.summaryMaxTokens ?? SUMMARY_MAX_TOKENS;
-  const synthMax = opts.synthesisMaxTokens ?? SYNTHESIS_MAX_TOKENS;
+  const limits = debateLimits();
+  const agentMax = opts.agentMaxTokens ?? limits.agent;
+  const summaryMax = opts.summaryMaxTokens ?? limits.summary;
+  const synthMax = opts.synthesisMaxTokens ?? limits.synthesis;
+  const digestMax = opts.digestMaxTokens ?? limits.digest;
+  const factCheckMax = opts.factCheckMaxTokens ?? limits.factCheck;
+  const reasoningMax = opts.reasoningMaxTokens ?? limits.reasoning;
 
   const budget = new BudgetTracker(plan.budgetCapTokens, opts.costCapUsd ?? costCapFromEnv());
   const agents: DebateAgent[] = plan.executionPlan.assignedAgents;
@@ -168,12 +171,15 @@ export async function runDebate(
     agentId: string;
     models: string[];
     messages: ChatMessage[];
+    /** Visible-answer budget; the reasoning budget is added on top for the request. */
     maxTokens: number;
     rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY" | "FACT_CHECK" | "DIGEST";
     extraData?: Record<string, unknown>;
     webSearch?: { maxResults: number };
   }): Promise<string> {
-    const { round, agentId, maxTokens } = args;
+    const { round, agentId } = args;
+    // Reasoning is billed as output: reserve it separately so it can't starve the answer.
+    const maxTokens = args.maxTokens + reasoningMax;
     // Media only goes to models that can read it; with none, strip it (the digest stays in the text).
     let models = args.models;
     let messages = args.messages;
@@ -189,6 +195,7 @@ export async function runDebate(
     let text = "";
     let reasoning = "";
     let usage: LLMUsage | undefined;
+    let truncated = false;
     const citations: { url: string; title?: string }[] = [];
     if (args.webSearch) {
       emit(round, agentId, "SEARCHING", 0, { statusMessage: "Searching the web…" });
@@ -210,12 +217,15 @@ export async function runDebate(
           messages: msgs,
           models: mdls,
           maxTokens,
+          reasoning: { maxTokens: reasoningMax },
           webSearch: args.webSearch,
         })) {
           if (c.type === "text") text += c.delta;
           else if (c.type === "reasoning") reasoning += c.delta;
-          else if (c.type === "usage") usage = c.usage;
-          else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
+          else if (c.type === "usage") {
+            usage = c.usage;
+            truncated = c.usage.finishReason === "length";
+          } else if (c.type === "citations") citations.push(...sanitizeCitations(c.citations));
           else emit(round, agentId, "FALLBACK", 0, { primary: c.primary, modelUsed: c.modelUsed });
         }
       };
@@ -225,6 +235,7 @@ export async function runDebate(
         // A media call failed before producing output: retry once text-only over the full model chain.
         if (!(hasMedia(messages) && !text)) throw e;
         reasoning = "";
+        truncated = false;
         citations.length = 0;
         await consume(stripMedia(messages), args.models);
       }
@@ -269,7 +280,10 @@ export async function runDebate(
         ...args.extraData,
         ...(args.webSearch ? { citations } : {}),
         ...(cached ? { cached: true } : {}),
+        ...(truncated ? { truncated: true } : {}),
         message: text,
+        ...(reasoning ? { thought: reasoning } : {}),
+        latencyMs,
         costUsd,
         model: usage?.modelUsed ?? (cached ? hit?.model : undefined) ?? models[0],
         budget: snapshot(),
@@ -304,7 +318,7 @@ export async function runDebate(
               media,
               names: att.items.map((i) => i.filename),
             }),
-            maxTokens: opts.digestMaxTokens ?? DIGEST_MAX_TOKENS,
+            maxTokens: digestMax,
             rowAction: "DIGEST",
             extraData: { attachmentDigest: true },
           })
@@ -388,7 +402,7 @@ export async function runDebate(
             searchEnabled,
             digest,
           }),
-          maxTokens: agentMax,
+          maxTokens: factCheckMax,
           rowAction: "FACT_CHECK",
           extraData: { factCheck: true },
           webSearch: searchEnabled ? { maxResults: webSearchMaxResults() } : undefined,

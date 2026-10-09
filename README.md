@@ -82,11 +82,11 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 
 ### 4.1 Token Budget Allocation Strategy
 
-- **Hard Caps per Quest**: Every user query is assigned a total token ceiling (e.g., max 50,000 combined tokens across all rounds).
+- **Hard Caps per Quest**: Every user query is assigned a total token ceiling (e.g., max 120,000 combined tokens across all rounds; reasoning tokens count, so per-call limits are visible budget + `REASONING_MAX_TOKENS`).
 - **Lead Orchestrator Budgeting**:
-  - **Complexity 1-2**: 1–2 Sub-Agents, 1 Round (Max 10k tokens).
-  - **Complexity 3-4**: 2–3 Sub-Agents, 2 Rounds (Max 30k tokens).
-  - **Complexity 5**: 3–4 Sub-Agents, 3 Rounds + Deep Research (Max 50k tokens).
+  - **Complexity 1-2**: 1–2 Sub-Agents, 1 Round (Max 20k tokens).
+  - **Complexity 3-4**: 2–3 Sub-Agents, 2 Rounds (Max 60k tokens).
+  - **Complexity 5**: 3–4 Sub-Agents, 3 Rounds + Deep Research (Max 120k tokens).
 - **Context Truncation**: Debate history past Round 2 must be summarized by the Lead Agent before feeding context into Round 3+ to avoid exponential token scaling ($O(N^2)$ context growth).
 
 ### 4.2 Rate-Limiting & Cost Guardrails

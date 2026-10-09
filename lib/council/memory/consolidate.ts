@@ -47,7 +47,13 @@ export interface ConsolidateResult {
 
 const NOOP: ConsolidateResult = { ran: false, merged: 0, decayed: 0, deleted: 0 };
 
-function audit(deps: ConsolidateDeps, ts: number, op: string, memoryId: string | null, detail: string) {
+function audit(
+  deps: ConsolidateDeps,
+  ts: number,
+  op: string,
+  memoryId: string | null,
+  detail: string,
+) {
   sqliteOf(deps)
     .prepare("INSERT INTO memory_ops (ts, op, memory_id, detail) VALUES (?, ?, ?, ?)")
     .run(ts, op, memoryId, detail);
@@ -63,13 +69,11 @@ export interface MemoryOp {
 }
 
 export function listMemoryOps(limit = 50, deps: ConsolidateDeps = {}): MemoryOp[] {
-  return (
-    sqliteOf(deps)
-      .prepare(
-        "SELECT id, ts, op, memory_id AS memoryId, detail FROM memory_ops ORDER BY id DESC LIMIT ?",
-      )
-      .all(Math.max(1, Math.min(limit, 500))) as MemoryOp[]
-  );
+  return sqliteOf(deps)
+    .prepare(
+      "SELECT id, ts, op, memory_id AS memoryId, detail FROM memory_ops ORDER BY id DESC LIMIT ?",
+    )
+    .all(Math.max(1, Math.min(limit, 500))) as MemoryOp[];
 }
 
 /** All quest ids a memory was derived from (primary source + merged provenance). */
@@ -205,13 +209,21 @@ export function decayMemories(
     if (r.confidence < DECAY_DELETE_BELOW) {
       sqlite.prepare("DELETE FROM memories WHERE id = ? AND pinned = 0").run(r.id);
       sqlite.prepare("DELETE FROM memory_sources WHERE memory_id = ?").run(r.id);
-      audit(deps, now, "delete", r.id, `confidence ${r.confidence.toFixed(2)} below ${DECAY_DELETE_BELOW}, unused`);
+      audit(
+        deps,
+        now,
+        "delete",
+        r.id,
+        `confidence ${r.confidence.toFixed(2)} below ${DECAY_DELETE_BELOW}, unused`,
+      );
       deleted++;
       continue;
     }
     const next = Math.round(Math.max(DECAY_FLOOR, r.confidence - DECAY_STEP) * 1000) / 1000;
     if (next >= r.confidence) continue;
-    sqlite.prepare("UPDATE memories SET confidence = ? WHERE id = ? AND pinned = 0").run(next, r.id);
+    sqlite
+      .prepare("UPDATE memories SET confidence = ? WHERE id = ? AND pinned = 0")
+      .run(next, r.id);
     audit(deps, now, "decay", r.id, `confidence ${r.confidence.toFixed(2)} -> ${next.toFixed(2)}`);
     decayed++;
   }
