@@ -27,9 +27,18 @@ export interface UseQuestStream {
   approve: (approved: boolean) => Promise<boolean>;
 }
 
+/** Hides raw parser/internal text behind a readable message. */
+export function friendlyError(msg: string): string {
+  if (/JSON|Unexpected token|classification|is not valid|parse/i.test(msg)) {
+    return "The council couldn't start this quest. Please try again or rephrase your question.";
+  }
+  return msg;
+}
+
 function errorText(body: unknown, status: number): string {
   const err = (body as { error?: unknown } | null)?.error;
-  return typeof err === "string" ? err : `Request failed (${status})`;
+  if (typeof err !== "string") return `Request failed (${status})`;
+  return friendlyError(err);
 }
 
 export function useQuestStream(): UseQuestStream {
@@ -142,7 +151,7 @@ export function useQuestStream(): UseQuestStream {
         connect(questId, genRef.current, 0);
         return true;
       } catch (e) {
-        setConnectionError(e instanceof Error ? e.message : "Failed to start quest");
+        setConnectionError(e instanceof Error ? friendlyError(e.message) : "Failed to start quest");
         return false;
       } finally {
         setStarting(false);
@@ -166,7 +175,11 @@ export function useQuestStream(): UseQuestStream {
           dispatch({ type: "reset" });
           const err = (body as { error?: unknown } | null)?.error;
           throw new Error(
-            res.status === 404 ? "Quest not found" : typeof err === "string" ? err : `Request failed (${res.status})`,
+            res.status === 404
+              ? "Quest not found"
+              : typeof err === "string"
+                ? err
+                : `Request failed (${res.status})`,
           );
         }
         const info = body as { source?: unknown; status?: unknown } | null;

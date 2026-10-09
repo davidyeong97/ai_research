@@ -27,7 +27,7 @@ describe("quest budget enforcement", () => {
     const speaking = events.filter((e) => e.action === "SPEAKING");
     expect(speaking.length).toBeGreaterThan(0);
     const b = speaking[0].data.budget as Record<string, number>;
-    expect(b.cap).toBe(30000);
+    expect(b.cap).toBe(60000);
     expect(b.used + b.remaining).toBe(b.cap);
     expect(b.remainingRatio).toBeGreaterThan(0.9);
     expect(events.at(-1)?.action).toBe("DONE");
@@ -35,10 +35,10 @@ describe("quest budget enforcement", () => {
   });
 
   it("stops with budget_exceeded when the cap is hit", async () => {
-    const { events, session } = await run({ promptTokens: 20000, completionTokens: 9800 });
+    const { events, session } = await run({ promptTokens: 40000, completionTokens: 19800 });
     const last = events.at(-1)!;
     expect(last.action).toBe("ERROR");
-    expect(last.data).toMatchObject({ reason: "budget_exceeded", cap: 30000 });
+    expect(last.data).toMatchObject({ reason: "budget_exceeded", cap: 60000 });
     expect(events.filter((e) => e.action === "SPEAKING")).toHaveLength(1);
     expect(session?.status).toBe("budget_exceeded");
   });

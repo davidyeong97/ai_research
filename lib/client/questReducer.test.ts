@@ -244,3 +244,22 @@ describe("attachments", () => {
     expect(s.pendingApproval?.attachments).toEqual([{ id: "a1", filename: "x.pdf", kind: "pdf" }]);
   });
 });
+
+describe("long and truncated replies", () => {
+  it("keeps the full message and thought and flags truncation", () => {
+    const message = "word ".repeat(3000);
+    const thought = "think ".repeat(3000);
+    const s = run(
+      started(),
+      ev({ agentId: "claude", action: "SPEAKING", data: { message, thought, truncated: true } }),
+      ev({ agentId: "gemini", action: "SPEAKING", data: { message: "ok" } }),
+    );
+    const [a, b] = s.transcript;
+    expect(a.text).toBe(message);
+    expect(a.thought).toBe(thought.trim());
+    expect(a.truncated).toBe(true);
+    expect(s.agents[0].lastThought).toBe(thought.trim());
+    expect(s.agents[0].lastTruncated).toBe(true);
+    expect(b.truncated).toBeUndefined();
+  });
+});

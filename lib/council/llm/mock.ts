@@ -28,6 +28,8 @@ export interface MockResponse {
   /** Model that "served" the request; defaults to the primary model. */
   modelUsed?: string;
   usage?: Partial<Omit<LLMUsage, "modelUsed">>;
+  /** Simulated finish reason ("length" = truncated by the token limit). */
+  finishReason?: string;
   /** Emitted only when the request has webSearch set. */
   citations?: Citation[];
   error?: Error;
@@ -92,6 +94,7 @@ export class MockLLMClient implements LLMClient {
         completionTokens: res.usage?.completionTokens ?? approx(text),
         costUsd: res.usage?.costUsd ?? 0,
         modelUsed,
+        finishReason: res.finishReason ?? res.usage?.finishReason ?? "stop",
       },
     };
   }

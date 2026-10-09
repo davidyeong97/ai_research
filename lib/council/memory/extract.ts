@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb, schema, type DB } from "@/lib/db";
 import { costCapFromEnv } from "../budget";
 import { sanitizeText } from "../debate/sanitize";
+import { extractJson } from "../json-extract";
 import { collectChat, type LLMClient } from "../llm";
 import { memoryEnabled, memoryModel } from "./config";
 import { noteExtraction } from "./consolidate";
@@ -20,9 +21,7 @@ const INPUT_CHARS = 4000;
 
 export const extractMaxCostUsd = (): number => {
   const n = Number(process.env.MEMORY_EXTRACT_MAX_COST_USD);
-  return process.env.MEMORY_EXTRACT_MAX_COST_USD?.trim() && Number.isFinite(n) && n >= 0
-    ? n
-    : 0.01;
+  return process.env.MEMORY_EXTRACT_MAX_COST_USD?.trim() && Number.isFinite(n) && n >= 0 ? n : 0.01;
 };
 
 const ItemSchema = z.object({
@@ -57,15 +56,8 @@ const SYSTEM_PROMPT =
 
 /** Parses the model reply into validated items; malformed input yields []. */
 export function parseExtraction(text: string): z.infer<typeof ItemSchema>[] {
-  const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start < 0 || end <= start) return [];
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text.slice(start, end + 1));
-  } catch {
-    return [];
-  }
+  const raw = extractJson(text, (v) => (Array.isArray(v) ? v : undefined), "[");
+  if (!raw) return [];
   if (!Array.isArray(raw)) return [];
   const out: z.infer<typeof ItemSchema>[] = [];
   for (const item of raw) {
@@ -111,11 +103,7 @@ export async function extractMemories(
   try {
     if (opts.remember === false || !memoryEnabled()) return 0;
     const db = deps.db ?? getDb();
-    const session = db
-      .select()
-      .from(schema.sessions)
-      .where(eq(schema.sessions.id, questId))
-      .get();
+    const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, questId)).get();
     if (!session || session.status !== "done" || !session.outcome) return 0;
     if (session.totalCostUsd >= costCapFromEnv()) return 0;
 

@@ -265,3 +265,66 @@ describe("runDebate fact-check", () => {
     expect(events.some((e) => e.action === "FACT_CHECKING")).toBe(true);
   });
 });
+
+describe("token limits, reasoning and truncation", () => {
+  it("requests visible + reasoning budget and a reasoning option", async () => {
+    const llm = new MockLLMClient("x");
+    await run(makePlan(1), llm, { agentMaxTokens: 100, synthesisMaxTokens: 200, reasoningMaxTokens: 50 });
+    expect(llm.calls[0].maxTokens).toBe(150);
+    expect(llm.calls[0].reasoning).toEqual({ maxTokens: 50 });
+    expect(llm.calls.at(-1)!.maxTokens).toBe(250);
+  });
+
+  it("defaults are env-configurable", async () => {
+    const { debateLimits } = await import("./limits");
+    expect(debateLimits({})).toMatchObject({
+      agent: 1500,
+      synthesis: 3000,
+      summary: 1000,
+      digest: 1000,
+      factCheck: 1000,
+      reasoning: 1024,
+    });
+    expect(debateLimits({ AGENT_MAX_TOKENS: "2000", REASONING_MAX_TOKENS: "bad" })).toMatchObject({
+      agent: 2000,
+      reasoning: 1024,
+    });
+  });
+
+  it("emits thought and truncated on SPEAKING when finish reason is length", async () => {
+    const llm = new MockLLMClient((p) =>
+      p.models[0] === "m/a"
+        ? { text: "cut mid sent", reasoning: "my thinking", finishReason: "length" }
+        : "complete.",
+    );
+    const { events } = await run(makePlan(1), llm);
+    const a = events.find((e) => e.agentId === "wizard-1" && e.action === "SPEAKING")!;
+    expect(a.data).toMatchObject({ truncated: true, thought: "my thinking" });
+    const b = events.find((e) => e.agentId === "scout-1" && e.action === "SPEAKING")!;
+    expect(b.data.truncated).toBeUndefined();
+  });
+
+  it("complexity-5 plan with usage near the maxima completes within the default cap", async () => {
+    const { defaultBudgetCap } = await import("../budget");
+    const agents = ["a", "b", "c", "d"].map((id, i) => ({
+      id: `${id}-1`,
+      role: i === 1 ? "scout" : "wizard",
+      avatar: i === 1 ? "scout" : "wizard",
+      model: `m/${id}`,
+      fallbackModels: [],
+    }));
+    const plan: OrchestrationPlan = {
+      taskId: "t",
+      complexityScore: 5,
+      budgetCapTokens: defaultBudgetCap(5),
+      executionPlan: { maxRounds: 3, toolsAllowed: [], assignedAgents: agents },
+    };
+    const llm = new MockLLMClient((p) => ({
+      text: "answer",
+      usage: { promptTokens: 4000, completionTokens: p.maxTokens },
+    }));
+    const { events, session } = await run(plan, llm);
+    expect(events.at(-1)!.action).toBe("DONE");
+    expect(session.status).toBe("done");
+  });
+});

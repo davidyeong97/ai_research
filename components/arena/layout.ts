@@ -12,7 +12,7 @@ export interface TableGeometry {
 
 /** Round (elliptical) table centred in the stage, scaled to stage size. */
 export function tableGeometry(width: number, height: number): TableGeometry {
-  return { cx: width / 2, cy: height * 0.52, rx: width * 0.2, ry: height * 0.17 };
+  return { cx: width / 2, cy: height * 0.56, rx: width * 0.15, ry: height * 0.13 };
 }
 
 /**
