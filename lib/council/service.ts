@@ -42,7 +42,7 @@ export type ServiceDeps = Pick<QuestDeps, "db" | "bus" | "llm" | "controlTimeout
 
 const MAX_WAIT_MS = 50_000;
 const MAX_RECENT = 50;
-const SPEAKING_TRUNCATE = 500;
+const SPEAKING_TRUNCATE = 8000;
 const MAX_LIST = 50;
 const TERMINAL_STATUSES = new Set([
   "done",

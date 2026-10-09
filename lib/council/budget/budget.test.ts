@@ -9,7 +9,7 @@ import {
 
 describe("defaultBudgetCap", () => {
   it("follows README 4.1", () => {
-    expect([1, 2, 3, 4, 5].map(defaultBudgetCap)).toEqual([10_000, 10_000, 30_000, 30_000, 50_000]);
+    expect([1, 2, 3, 4, 5].map(defaultBudgetCap)).toEqual([20_000, 20_000, 60_000, 60_000, 120_000]);
   });
   it("rejects NaN", () => expect(() => defaultBudgetCap(NaN)).toThrow(RangeError));
 });
@@ -21,8 +21,8 @@ describe("BudgetTracker", () => {
     b.record({ promptTokens: 500, completionTokens: 0 }, "wizard");
     b.record({ promptTokens: 0, completionTokens: 2000 }, "rogue");
     expect(b.used).toBe(5000);
-    expect(b.remaining).toBe(5000);
-    expect(b.remainingRatio).toBe(0.5);
+    expect(b.remaining).toBe(15_000);
+    expect(b.remainingRatio).toBe(0.75);
     expect(b.agentUsage("wizard")).toEqual({
       promptTokens: 1500,
       completionTokens: 1500,

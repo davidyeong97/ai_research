@@ -29,7 +29,7 @@ describe("sanitizeText", () => {
   it("caps length with marker", () => {
     const out = sanitizeText("x".repeat(100), { maxChars: 10 });
     expect(out).toBe("x".repeat(10) + " " + TRUNCATION_MARKER);
-    expect(sanitizeText("x".repeat(7000))).toContain(TRUNCATION_MARKER);
+    expect(sanitizeText("x".repeat(13000))).toContain(TRUNCATION_MARKER);
   });
   it("sanitizes attribute values", () => {
     expect(wrapPeerMessage('a"><x', "t")).toContain('agent="ax"');

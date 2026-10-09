@@ -115,6 +115,24 @@ export function TranscriptPanel({
             ) : (
               <Markdown>{e.text}</Markdown>
             )}
+            {e.kind === "message" && e.truncated && (
+              <p className="mt-1 text-[10px] italic text-red-300" data-testid="cut-off-marker">
+                (cut off)
+              </p>
+            )}
+            {e.kind === "message" && e.thought && (
+              <details className="mt-1" data-testid="thinking-details">
+                <summary className="min-h-8 cursor-pointer text-[10px] uppercase text-indigo-200 underline">
+                  Thinking
+                </summary>
+                <div
+                  className="mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap break-words border border-black bg-black/40 p-2 text-[11px] text-indigo-100"
+                  data-testid="thinking-text"
+                >
+                  {e.thought}
+                </div>
+              </details>
+            )}
             {e.kind === "message" && (
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {(e.citations ?? []).slice(0, 3).map((c, i) => {

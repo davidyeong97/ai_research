@@ -145,10 +145,11 @@ export class OpenRouterClient implements LLMClient {
       }
     }
 
-    const [response, providerMetadata, usage] = await Promise.all([
+    const [response, providerMetadata, usage, finishReason] = await Promise.all([
       result.response,
       result.providerMetadata,
       result.usage,
+      result.finishReason,
     ]);
     const modelUsed = response.modelId || primary;
     const or = providerMetadata?.openrouter as
@@ -165,6 +166,7 @@ export class OpenRouterClient implements LLMClient {
         completionTokens: or?.usage?.completionTokens ?? usage.outputTokens ?? 0,
         costUsd: or?.usage?.cost ?? 0,
         modelUsed,
+        finishReason,
       },
     };
   }
