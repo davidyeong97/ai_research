@@ -120,9 +120,13 @@ function enforceMcpLimits(db: DB): void {
   }
 }
 
-export async function startQuest(input: StartQuestInput, deps: ServiceDeps = {}): Promise<StartQuestResult> {
+export async function startQuest(
+  input: StartQuestInput,
+  deps: ServiceDeps = {},
+): Promise<StartQuestResult> {
   const query = input.query?.trim() ?? "";
-  if (!query && !input.attachmentIds?.length) throw new ServiceError("invalid", "query is required");
+  if (!query && !input.attachmentIds?.length)
+    throw new ServiceError("invalid", "query is required");
   let costCapUsd = costCapFromEnv();
   if (input.source === "mcp") {
     enforceMcpLimits(deps.db ?? getDb());
@@ -190,7 +194,8 @@ function summarize(e: CouncilEvent): EventSummary {
     tokensUsed: e.tokensUsed,
   };
   if (typeof d.message === "string") {
-    out.message = e.action === "SPEAKING" ? truncate(d.message, SPEAKING_TRUNCATE) : truncate(d.message, 300);
+    out.message =
+      e.action === "SPEAKING" ? truncate(d.message, SPEAKING_TRUNCATE) : truncate(d.message, 300);
   }
   if (typeof d.statusMessage === "string") out.statusMessage = d.statusMessage;
   if (e.action === "PAUSED") {
@@ -225,7 +230,10 @@ export function getQuestSnapshot(
     .get();
   const all = bus.replay(questId, 0);
   const since = Math.max(0, Math.floor(opts.sinceSeq ?? 0));
-  const recent = all.filter((e) => e.id > since).slice(-MAX_RECENT).map(summarize);
+  const recent = all
+    .filter((e) => e.id > since)
+    .slice(-MAX_RECENT)
+    .map(summarize);
   const matrix = (plan?.agentMatrix ?? []) as { id: string; role: string; model: string }[];
   const lastError = [...all].reverse().find((e) => e.action === "ERROR");
   const errData = (lastError?.data ?? {}) as Record<string, unknown>;
@@ -238,7 +246,11 @@ export function getQuestSnapshot(
     complexity: plan?.complexity ?? null,
     rounds: plan?.rounds ?? null,
     agents: matrix.map((a) => ({ id: a.id, role: a.role, model: a.model })),
-    attachments: listSessionAttachments(questId, db).map((a) => ({ id: a.id, filename: a.filename, kind: a.kind })),
+    attachments: listSessionAttachments(questId, db).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      kind: a.kind,
+    })),
     awaitingApproval,
     paused: !!getControl(questId)?.paused,
     totalTokens: session.totalTokens,
@@ -270,7 +282,11 @@ export function waitForQuest(
   const timeoutMs = Math.max(0, Math.min(opts.timeoutMs ?? MAX_WAIT_MS, MAX_WAIT_MS));
   const snap = () => getQuestSnapshot(questId, { sinceSeq: opts.untilSeqAfter }, deps);
   const settled = () => {
-    const s = db.select({ status: schema.sessions.status }).from(schema.sessions).where(eq(schema.sessions.id, questId)).get();
+    const s = db
+      .select({ status: schema.sessions.status })
+      .from(schema.sessions)
+      .where(eq(schema.sessions.id, questId))
+      .get();
     if (!s) throw new ServiceError("not_found", "quest not found");
     return TERMINAL_STATUSES.has(s.status) || s.status === "awaiting_approval";
   };
@@ -308,7 +324,11 @@ function requireSession(db: DB, questId: string) {
   const session = db.select().from(schema.sessions).where(eq(schema.sessions.id, questId)).get();
   if (!session) throw new ServiceError("not_found", "quest not found");
   if (session.status === "interrupted") {
-    throw new ServiceError("conflict", "quest was interrupted by a server restart", "server_restarted");
+    throw new ServiceError(
+      "conflict",
+      "quest was interrupted by a server restart",
+      "server_restarted",
+    );
   }
   return session;
 }
@@ -334,7 +354,8 @@ export function controlQuest(
   const control = getControl(questId);
   if (action === "cancel") {
     const active = session.status === "running" || session.status === "awaiting_approval";
-    if (!active || !control) throw new ServiceError("conflict", `quest is not running (${session.status})`);
+    if (!active || !control)
+      throw new ServiceError("conflict", `quest is not running (${session.status})`);
     control.abort("cancelled");
     return { ok: true, paused: control.paused };
   }

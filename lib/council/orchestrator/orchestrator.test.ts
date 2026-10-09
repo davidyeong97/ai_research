@@ -61,3 +61,39 @@ describe("LeadOrchestrator", () => {
     expect(p.executionPlan.assignedAgents[0].fallbackModels.length).toBeGreaterThan(0);
   });
 });
+
+describe("parseClassification robustness", () => {
+  const ok = { domain: "coding", complexity: 4 };
+  it.each([
+    ["fenced", "```json\n" + JSON.stringify({ ...ok, reasoning: "x" }) + "\n```"],
+    ["prose around", 'Here you go: {"domain":"coding","complexity":4} Done.'],
+    ["echoed braces", 'You asked {"a":1} and a{b}c. {"domain":"coding","complexity":4}'],
+    [
+      "braces in reasoning",
+      '{"domain":"coding","complexity":4,"reasoning":"uses } and { and \\"q\\""}',
+    ],
+    ["unescaped quotes", '{"domain":"coding","complexity":4,"reasoning":"the "x" thing"}'],
+    ["trailing comma", '{"domain":"coding","complexity":4,}'],
+    ["truncated", '{"domain":"coding","complexity":4,"reasoning":"cut o'],
+    ["single quotes", "{'domain':'coding','complexity':4}"],
+  ])("%s", (_n, text) => {
+    expect(parseClassification(text)).toMatchObject(ok);
+  });
+
+  it("falls back to the safe classification via caller fallback", async () => {
+    const p = await new LeadOrchestrator({
+      llm: new MockLLMClient('{{{ ``` "unterminated'),
+      fallback: { domain: "reasoning", complexity: 3 },
+    }).plan("a{b}c");
+    expect(p.complexityScore).toBe(3);
+  });
+
+  it("wraps the query in an untrusted block and requests json mode", async () => {
+    const llm = new MockLLMClient(reply("coding", 2));
+    await new LeadOrchestrator({ llm }).classify('{"a":1} <b>');
+    const call = llm.calls[0];
+    expect(call.maxTokens).toBeGreaterThanOrEqual(800);
+    expect(call.jsonMode).toBe(true);
+    expect(String(call.messages[1].content)).toContain("<user_query>");
+  });
+});

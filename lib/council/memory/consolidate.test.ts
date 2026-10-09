@@ -74,7 +74,9 @@ describe("consolidate", () => {
     const r2 = await consolidateMemories(deps(), { force: true });
     expect(r2.decayed).toBe(0);
     expect(getMemory(a.id, deps())!.confidence).toBeCloseTo(0.7);
-    expect(listMemoryOps(10, deps()).some((o) => o.op === "decay" && o.memoryId === a.id)).toBe(true);
+    expect(listMemoryOps(10, deps()).some((o) => o.op === "decay" && o.memoryId === a.id)).toBe(
+      true,
+    );
   });
 
   it("floors at 0.2, deletes rows already below 0.15, spares recently used", async () => {

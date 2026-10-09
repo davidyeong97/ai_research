@@ -30,7 +30,13 @@ export function toMarkdown(
   }
   if (plan) {
     const agents = (Array.isArray(plan.agentMatrix) ? plan.agentMatrix : []) as AgentLike[];
-    out.push("## Plan", "", `- Complexity: ${plan.complexity}`, `- Rounds: ${plan.rounds}`, "- Agents:");
+    out.push(
+      "## Plan",
+      "",
+      `- Complexity: ${plan.complexity}`,
+      `- Rounds: ${plan.rounds}`,
+      "- Agents:",
+    );
     for (const a of agents) {
       if (a.id) roles.set(a.id, a.role ?? a.id);
       out.push(`  - ${a.role ?? a.id ?? "agent"} (${a.id ?? "?"}): ${a.model ?? "default model"}`);
