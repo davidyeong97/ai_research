@@ -336,7 +336,9 @@ export async function updateMemory(
     vec = await embedText(content, { llm: deps.llm });
     if (deps.rejectDuplicates) {
       const exact = sqlite
-        .prepare("SELECT id FROM memories WHERE lower(trim(content)) = lower(?) AND id != ? LIMIT 1")
+        .prepare(
+          "SELECT id FROM memories WHERE lower(trim(content)) = lower(?) AND id != ? LIMIT 1",
+        )
         .get(content, id) as { id: string } | undefined;
       let dup = exact?.id ?? null;
       if (!dup && vec) {

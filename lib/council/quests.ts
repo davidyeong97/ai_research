@@ -10,7 +10,7 @@ import { OpenRouterClient, type LLMClient } from "./llm";
 import { extractMemories } from "./memory/extract";
 import { prepareRecall } from "./memory/recall";
 import { touchUsed } from "./memory/store";
-import { LeadOrchestrator } from "./orchestrator";
+import { LeadOrchestrator, SAFE_CLASSIFICATION } from "./orchestrator";
 import { UploadError, linkToSession, resolveUnlinkedAttachments } from "./attachments";
 import { buildAttachmentContext, type AttachmentMeta } from "./debate/attachment-context";
 
@@ -74,7 +74,11 @@ export async function createQuest(
   const attachmentCtx = records.length ? buildAttachmentContext(records, db) : undefined;
   const attachments = attachmentCtx?.items ?? [];
   const recall = await prepareRecall(query, { db, llm });
-  const plan = await new LeadOrchestrator({ llm, idFactory: () => questId }).plan(
+  const plan = await new LeadOrchestrator({
+    llm,
+    idFactory: () => questId,
+    fallback: SAFE_CLASSIFICATION,
+  }).plan(
     query,
     undefined,
     attachmentCtx,
@@ -165,7 +169,10 @@ export async function createQuest(
         plan: planSummary(plan),
         ...(attachments.length ? { attachments: attachments.map(brief) } : {}),
         estimatedMaxTokens: plan.budgetCapTokens,
-        estimatedMaxCostUsd: Math.min(deps.costCapUsd ?? Infinity, estimateMaxCostUsd(plan.budgetCapTokens)),
+        estimatedMaxCostUsd: Math.min(
+          deps.costCapUsd ?? Infinity,
+          estimateMaxCostUsd(plan.budgetCapTokens),
+        ),
       },
     });
     flow = approval.then(async (r) => {
@@ -186,12 +193,15 @@ export async function createQuest(
         agentId: "lead",
         action: "DONE",
         tokensUsed: 0,
-        data: { cancelled: true, reason:
+        data: {
+          cancelled: true,
+          reason:
             r === "timeout"
               ? control.aborted === "cancelled"
                 ? "cancelled"
                 : "approval_timeout"
-              : "rejected" },
+              : "rejected",
+        },
       });
     });
   }

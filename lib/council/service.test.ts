@@ -228,7 +228,9 @@ describe("controlQuest", () => {
     expect(() => controlQuest(r.questId, "inject", "  ", deps)).toThrowError(/text is required/);
     expect(controlQuest(r.questId, "resume", undefined, deps).paused).toBe(false);
     await r.done;
-    expect(deps.bus.replay(r.questId).some((e) => e.agentId === "user" && e.data.guidance)).toBe(true);
+    expect(deps.bus.replay(r.questId).some((e) => e.agentId === "user" && e.data.guidance)).toBe(
+      true,
+    );
   });
 
   it("cancel while paused ends with status cancelled and a DONE{cancelled} event", async () => {
@@ -251,7 +253,10 @@ describe("controlQuest", () => {
     controlQuest(r.questId, "cancel", undefined, deps);
     await r.done;
     expect(getQuestSnapshot(r.questId, {}, deps).status).toBe("cancelled");
-    expect(deps.bus.replay(r.questId).at(-1)!.data).toMatchObject({ cancelled: true, reason: "cancelled" });
+    expect(deps.bus.replay(r.questId).at(-1)!.data).toMatchObject({
+      cancelled: true,
+      reason: "cancelled",
+    });
   });
 
   it("rejects unknown quests, bad actions and non-running quests", async () => {

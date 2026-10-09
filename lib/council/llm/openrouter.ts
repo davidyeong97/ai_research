@@ -102,7 +102,7 @@ export class OpenRouterClient implements LLMClient {
   }
 
   async *streamChat(params: StreamChatParams): AsyncIterable<LLMChunk> {
-    const { messages, models, maxTokens, reasoning, signal, webSearch } = params;
+    const { messages, models, maxTokens, reasoning, signal, webSearch, jsonMode } = params;
     if (models.length === 0) throw new Error("streamChat requires at least one model");
     const [primary, ...fallbacks] = models;
 
@@ -111,6 +111,7 @@ export class OpenRouterClient implements LLMClient {
       usage: { include: true },
       ...(fallbacks.length > 0 ? { models: [primary, ...fallbacks] } : {}),
       ...(plugins.length > 0 ? { plugins } : {}),
+      ...(jsonMode ? { extraBody: { response_format: { type: "json_object" } } } : {}),
       ...(reasoning
         ? {
             reasoning:

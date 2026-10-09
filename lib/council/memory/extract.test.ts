@@ -9,7 +9,8 @@ import { parseExtraction } from "./extract";
 import { listMemories } from "./store";
 
 const classify = JSON.stringify({ domain: "coding", complexity: 2 });
-const isExtract = (p: StreamChatParams) => textOf(p.messages[0].content).includes("long-term memory");
+const isExtract = (p: StreamChatParams) =>
+  textOf(p.messages[0].content).includes("long-term memory");
 
 function setup(extract: MockResponse | string | (() => never)) {
   const db = createDb(":memory:");
@@ -33,7 +34,11 @@ async function run(
 ) {
   const q = await createQuest(query, s, { remember });
   await q.done;
-  const session = s.db.select().from(schema.sessions).where(eq(schema.sessions.id, q.questId)).get();
+  const session = s.db
+    .select()
+    .from(schema.sessions)
+    .where(eq(schema.sessions.id, q.questId))
+    .get();
   return { ...q, session };
 }
 
@@ -43,7 +48,10 @@ afterEach(() => {
 
 describe("memory extraction", () => {
   it("stores deduped memories with provenance and records cost", async () => {
-    const s = setup({ text: good, usage: { promptTokens: 100, completionTokens: 50, costUsd: 0.002 } });
+    const s = setup({
+      text: good,
+      usage: { promptTokens: 100, completionTokens: 50, costUsd: 0.002 },
+    });
     const { questId, session } = await run(s);
     const mems = listMemories({}, s);
     expect(mems).toHaveLength(2);
@@ -55,7 +63,10 @@ describe("memory extraction", () => {
     expect(s.llm.calls.filter(isExtract)).toHaveLength(1);
 
     // Same theme again: deduped, not duplicated.
-    const s2 = { ...s, llm: new MockLLMClient((p) => (isExtract(p) ? good : "ok")).enqueue(classify) };
+    const s2 = {
+      ...s,
+      llm: new MockLLMClient((p) => (isExtract(p) ? good : "ok")).enqueue(classify),
+    };
     await run(s2);
     expect(listMemories({}, s)).toHaveLength(2);
   });
