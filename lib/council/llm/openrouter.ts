@@ -45,6 +45,23 @@ export function toModelMessages(messages: ChatMessage[]): ModelMessage[] {
   });
 }
 
+/** Maps system messages to model instructions, keeping only conversation messages in messages. */
+export function toModelPrompt(messages: ChatMessage[]) {
+  const instructions = messages
+    .filter((message) => message.role === "system")
+    .map((message) =>
+      typeof message.content === "string"
+        ? message.content
+        : message.content.map((part) => (part.type === "text" ? part.text : "")).join(""),
+    )
+    .filter(Boolean)
+    .join("\n\n");
+  return {
+    ...(instructions ? { instructions } : {}),
+    messages: toModelMessages(messages.filter((message) => message.role !== "system")),
+  };
+}
+
 /** OpenRouter plugins for a request (web search and/or PDF file parser). */
 export function buildPlugins(params: Pick<StreamChatParams, "messages" | "webSearch">) {
   const plugins: Array<
@@ -121,9 +138,10 @@ export class OpenRouterClient implements LLMClient {
         : {}),
     });
 
+    const prompt = toModelPrompt(messages);
     const result = streamText({
       model,
-      messages: toModelMessages(messages),
+      ...prompt,
       maxOutputTokens: maxTokens,
       abortSignal: signal,
       onError: () => {},

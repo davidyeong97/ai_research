@@ -10,7 +10,7 @@ import {
   textOf,
   type ChatMessage,
 } from "./index";
-import { buildPlugins, toModelMessages } from "./openrouter";
+import { buildPlugins, toModelMessages, toModelPrompt } from "./openrouter";
 import { MockLLMClient } from "./mock";
 
 const png = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
@@ -60,6 +60,19 @@ describe("part mapping", () => {
     expect(out[2].content).toEqual([
       { type: "file", data: pdf, mediaType: "application/pdf", filename: "a.pdf" },
     ]);
+  });
+
+  it("maps system messages to instructions instead of conversation messages", () => {
+    expect(
+      toModelPrompt([
+        { role: "system", content: "sys" },
+        { role: "user", content: "look" },
+        { role: "system", content: "additional instructions" },
+      ]),
+    ).toEqual({
+      instructions: "sys\n\nadditional instructions",
+      messages: [{ role: "user", content: "look" }],
+    });
   });
 
   it("enables file-parser only with PDFs; engine configurable", () => {
