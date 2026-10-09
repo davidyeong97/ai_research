@@ -141,6 +141,7 @@ export function InspectPanel({
   const thought = entry ? entry.thought : agent?.lastThought;
   const citations = (entry ? entry.citations : agent?.lastCitations) ?? [];
   const text = entry?.text ?? agent?.latestLine;
+  const truncated = entry ? entry.truncated === true : agent?.lastTruncated === true;
 
   return (
     <div className="fixed inset-0 z-50" data-testid="inspect-overlay">
@@ -218,8 +219,13 @@ export function InspectPanel({
         )}
 
         {text && (
-          <div className="mb-3 border-2 border-black bg-black/40 p-2">
+          <div className="mb-3 max-h-[50dvh] overflow-y-auto border-2 border-black bg-black/40 p-2">
             <Markdown>{text}</Markdown>
+            {truncated && (
+              <p className="mt-1 text-[10px] italic text-red-300" data-testid="cut-off-marker">
+                (cut off)
+              </p>
+            )}
           </div>
         )}
 
@@ -235,7 +241,10 @@ export function InspectPanel({
             {thoughtOpen ? "▾" : "▸"} Thought log{thought ? "" : " (none)"}
           </button>
           {thought && thoughtOpen && (
-            <div id="inspect-thought" className="border-2 border-t-0 border-black p-2">
+            <div
+              id="inspect-thought"
+              className="max-h-[40dvh] overflow-y-auto border-2 border-t-0 border-black p-2"
+            >
               <Markdown>{thought}</Markdown>
             </div>
           )}

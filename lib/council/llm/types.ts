@@ -47,6 +47,8 @@ export interface LLMUsage {
   completionTokens: number;
   costUsd: number;
   modelUsed: string;
+  /** Provider finish reason; "length" means the output hit the token limit. */
+  finishReason?: string;
 }
 
 export interface Citation {

@@ -18,6 +18,7 @@ export interface AgentState {
   fallback?: { primary: string; modelUsed: string };
   costUsd: number;
   lastThought?: string;
+  lastTruncated?: boolean;
   lastCitations?: Citation[];
   lastLatencyMs?: number;
 }
@@ -70,6 +71,8 @@ export interface TranscriptEntry {
   text: string;
   tokensUsed: number;
   thought?: string;
+  /** Output hit the token limit and was cut off. */
+  truncated?: boolean;
   citations?: Citation[];
   model?: string;
   costUsd?: number;
@@ -353,6 +356,7 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
       const thought = str(d.thought)?.trim() || undefined;
       const citations = parseCitations(d.citations);
       const latencyMs = num(d.latencyMs);
+      const truncated = d.truncated === true;
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({
         ...a,
         status: "SPEAKING",
@@ -362,6 +366,7 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
         modelUsed: str(d.model) ?? a.modelUsed,
         costUsd: a.costUsd + (num(d.costUsd) ?? 0),
         lastThought: thought ?? a.lastThought,
+        lastTruncated: truncated,
         lastCitations: citations ?? a.lastCitations,
         lastLatencyMs: latencyMs ?? a.lastLatencyMs,
       }));
@@ -370,6 +375,7 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
         {
           ...entry("message", message),
           thought,
+          ...(truncated ? { truncated: true } : {}),
           citations,
           model: str(d.model),
           costUsd: num(d.costUsd),

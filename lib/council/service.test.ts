@@ -139,12 +139,12 @@ describe("getQuestSnapshot", () => {
         agentId: "a",
         action: "SPEAKING",
         tokensUsed: 1,
-        data: { message: "x".repeat(2000) },
+        data: { message: "x".repeat(20000) },
       });
     }
     const snap = getQuestSnapshot(r.questId, {}, deps);
     expect(snap.recent).toHaveLength(50);
-    expect(snap.recent.at(-1)!.message!.length).toBeLessThanOrEqual(501);
+    expect(snap.recent.at(-1)!.message!.length).toBeLessThanOrEqual(8001);
   });
 
   it("reports error details and unknown quests", async () => {
