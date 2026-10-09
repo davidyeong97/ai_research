@@ -38,7 +38,15 @@ function shortModel(m: string): string {
   return name.length > 18 ? name.slice(0, 17) + "…" : name;
 }
 
-function drawPixelBox(g: Graphics, w: number, h: number, tailX: number, below: boolean) {
+function drawPixelBox(
+  g: Graphics,
+  w: number,
+  h: number,
+  tailX: number,
+  below: boolean,
+  side: "left" | "right" | null = null,
+  tailY = 0,
+) {
   const notch = (x: number, y: number, bw: number, bh: number, color: number) => {
     g.rect(x + 2, y, bw - 4, bh).fill(color);
     g.rect(x, y + 2, bw, bh - 4).fill(color);
@@ -47,7 +55,16 @@ function drawPixelBox(g: Graphics, w: number, h: number, tailX: number, below: b
   notch(0, 0, w, h, 0x000000);
   notch(2, 2, w - 4, h - 4, 0xfef3c7);
   const tx = Math.round(Math.max(4, Math.min(w - 12, tailX - 4)));
-  if (below) {
+  if (side) {
+    const ty = Math.round(Math.max(4, Math.min(h - 12, tailY - 4)));
+    if (side === "right") {
+      g.rect(-4, ty, 4, 8).fill(0x000000);
+      g.rect(-2, ty + 2, 4, 4).fill(0xfef3c7);
+    } else {
+      g.rect(w, ty, 4, 8).fill(0x000000);
+      g.rect(w - 2, ty + 2, 4, 4).fill(0xfef3c7);
+    }
+  } else if (below) {
     g.rect(tx, -4, 8, 4).fill(0x000000);
     g.rect(tx + 2, -2, 4, 4).fill(0xfef3c7);
   } else {
@@ -348,7 +365,13 @@ export default function PixiStage({
             v.bubbleT = reduced ? 1 : 0;
           }
           v.bubbleText.style.wordWrapWidth = Math.max(60, Math.min(150, w * 0.4) - BUBBLE_PAD * 2);
-          v.bubbleText.text = line;
+          let shown = line;
+          v.bubbleText.text = shown;
+          // Shorten on small stages so the whole bubble always fits (full text is in inspect).
+          while (v.bubbleText.height + BUBBLE_PAD * 2 > h - 8 && shown.length > 12) {
+            shown = truncateLine(shown, Math.floor(shown.length * 0.75));
+            v.bubbleText.text = shown;
+          }
           const bw = Math.ceil(v.bubbleText.width) + BUBBLE_PAD * 2;
           const bh = Math.ceil(v.bubbleText.height) + BUBBLE_PAD * 2;
           const avoid = [...taken, ...sprites.filter((_, j) => j !== i)];
@@ -361,9 +384,11 @@ export default function PixiStage({
             stageW: w,
             stageH: h,
             avoid,
+            sprite: { x: pos[i].x - px / 2, y: pos[i].y - px, w: px, h: px },
+            preferSide: i === 0,
           });
           taken.push(pl);
-          drawPixelBox(v.bubbleGfx, pl.w, pl.h, pl.tailX - pl.x, pl.below);
+          drawPixelBox(v.bubbleGfx, pl.w, pl.h, pl.tailX - pl.x, pl.below, pl.side, pl.tailY - pl.y);
           v.bubble.pivot.set(pl.w / 2, pl.h / 2);
           v.bubble.position.set(Math.round(pl.x + pl.w / 2), Math.round(pl.y + pl.h / 2));
           v.bubble.visible = true;
@@ -485,7 +510,7 @@ export default function PixiStage({
   return (
     <div
       data-testid="arena-stage"
-      className="relative mx-auto aspect-square w-full max-w-xl overflow-hidden border-4 border-amber-200/80 bg-indigo-950/80 shadow-[4px_4px_0_0_#000]"
+      className="relative mx-auto aspect-square w-full max-w-2xl overflow-hidden border-4 border-amber-200/80 bg-indigo-950/80 shadow-[4px_4px_0_0_#000]"
     >
       <div ref={hostRef} aria-hidden className="absolute inset-0" />
       <ul className="sr-only" data-testid="stage-a11y-list">
