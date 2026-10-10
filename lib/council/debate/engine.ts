@@ -5,7 +5,18 @@ import type { OrchestrationPlan } from "../../shared";
 import { QuestAborted } from "../control";
 import { BudgetExceeded, BudgetTracker, CostCapExceeded, costCapFromEnv } from "../budget";
 import type { EventBus } from "../bus";
-import { cacheKey, cacheGet, cacheSet, purgeExpired } from "../cache";
+import {
+  cacheKey,
+  cacheGet,
+  cacheSet,
+  purgeExpired,
+  searchCacheGet,
+  searchCacheKey,
+  searchCacheSet,
+} from "../cache";
+import { extractJson } from "../json-extract";
+import { SearchError, getSearchProvider, searchBackend, searchDepth } from "../search";
+import type { SearchResult } from "../search";
 import type { ChatMessage, ContentPart, LLMClient, LLMUsage } from "../llm";
 import { estimatePromptTokens, hasMedia, supportsPdf, supportsVision } from "../llm";
 import { LEAD_MODELS, multimodalLeadModels } from "../roster";
@@ -16,6 +27,8 @@ import {
   buildAgentPrompt,
   buildDigestPrompt,
   buildFactCheckPrompt,
+  buildSearchQueryPrompt,
+  formatSearchContext,
   buildSynthesisPrompt,
   type DebateAgent,
   buildSummaryPrompt,
@@ -69,6 +82,35 @@ export function webSearchMaxResults(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_WEB_SEARCH_MAX_RESULTS;
 }
 
+function envInt(name: string, def: number, max: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), max) : def;
+}
+
+/** Search queries planned per web-search turn (env SEARCH_QUERIES_PER_TURN, default 2, max 3). */
+export function searchQueriesPerTurn(): number {
+  return envInt("SEARCH_QUERIES_PER_TURN", 2, 3);
+}
+
+/** Cap on injected search-result characters (env SEARCH_CONTEXT_MAX_CHARS, default 8000). */
+export function searchContextMaxChars(): number {
+  return envInt("SEARCH_CONTEXT_MAX_CHARS", 8000, 100_000);
+}
+
+const SEARCH_RETRY_BACKOFF_MS = 500;
+
+/** Appends text to the last user message (string or multimodal parts). */
+function appendToLastUser(messages: ChatMessage[], extra: string): ChatMessage[] {
+  const idx = messages.map((m) => m.role).lastIndexOf("user");
+  if (idx < 0) return [...messages, { role: "user", content: extra }];
+  const m = messages[idx];
+  const content: ChatMessage["content"] =
+    typeof m.content === "string"
+      ? `${m.content}\n\n${extra}`
+      : [...m.content, { type: "text", text: extra }];
+  return messages.map((x, i) => (i === idx ? { ...x, content } : x));
+}
+
 /** Drops image/file parts from messages (text kept). */
 function stripMedia(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((m) =>
@@ -106,6 +148,25 @@ function sanitizeCitations(list: { url: string; title?: string }[]) {
     }
   }
   return out;
+}
+
+/** One retry with backoff for retryable search errors (429, 5xx, timeouts, network). */
+async function searchWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!(e instanceof SearchError) || !e.retryable) throw e;
+    await new Promise((r) => setTimeout(r, SEARCH_RETRY_BACKOFF_MS));
+    return fn();
+  }
+}
+
+/** A Tavily search/planning failure that should trigger the OpenRouter plugin fallback. */
+class SearchFailure extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SearchFailure";
+  }
 }
 
 export async function runDebate(
@@ -165,6 +226,111 @@ export async function runDebate(
     costCapUsd: budget.costCapUsd,
   });
 
+  /** Accounts search spend in the budget and session total (throws CostCapExceeded at the cap). */
+  function recordSearchCost(costUsd: number, agentId: string) {
+    if (costUsd <= 0) return;
+    totalCostUsd += costUsd;
+    d.db.update(schema.sessions).set({ totalCostUsd }).where(eq(schema.sessions.id, questId)).run();
+    budget.recordCost(costUsd, agentId);
+  }
+
+  /** Plans 1-n queries with a cheap lead model; falls back to the (trimmed) user query. */
+  async function planQueries(
+    round: number,
+    agentId: string,
+    agentRole: string,
+    claims: readonly HistoryEntry[] | undefined,
+  ): Promise<string[]> {
+    const maxQueries = searchQueriesPerTurn();
+    const fallbackQuery = [query.replace(/\s+/g, " ").trim().slice(0, 400)].filter(Boolean);
+    if (maxQueries <= 1) return fallbackQuery;
+    const messages = buildSearchQueryPrompt({ query, agentRole, claims, maxQueries });
+    const maxTokens = 200;
+    if (!budget.canSpend(maxTokens + estimatePromptTokens(messages))) return fallbackQuery;
+    let text = "";
+    let usage: LLMUsage | undefined;
+    try {
+      for await (const c of d.llm.streamChat({
+        messages,
+        models: [LEAD_MODELS[1] ?? LEAD_MODELS[0], LEAD_MODELS[0]],
+        maxTokens,
+        jsonMode: true,
+      })) {
+        if (c.type === "text") text += c.delta;
+        else if (c.type === "usage") usage = c.usage;
+      }
+    } catch {
+      return fallbackQuery;
+    } finally {
+      if (usage) {
+        const costUsd = usage.costUsd ?? 0;
+        totalCostUsd += costUsd;
+        d.db
+          .update(schema.sessions)
+          .set({ totalCostUsd })
+          .where(eq(schema.sessions.id, questId))
+          .run();
+        budget.record(
+          { promptTokens: usage.promptTokens, completionTokens: usage.completionTokens },
+          agentId,
+        );
+        budget.recordCost(costUsd, agentId);
+      }
+    }
+    const parsed = extractJson(text, (v) => {
+      const q = (v as { queries?: unknown }).queries;
+      return Array.isArray(q) ? q : undefined;
+    });
+    const out: string[] = [];
+    for (const q of parsed ?? []) {
+      if (typeof q !== "string") continue;
+      const t = q.replace(/\s+/g, " ").trim().slice(0, 400);
+      if (t && !out.some((o) => o.toLowerCase() === t.toLowerCase())) out.push(t);
+      if (out.length >= maxQueries) break;
+    }
+    void round;
+    return out.length ? out : fallbackQuery;
+  }
+
+  /** Search-then-answer step: plan queries, search (cached), collect results and cost into `acc`. */
+  async function tavilySearch(
+    args: {
+      round: number;
+      agentId: string;
+      agentRole?: string;
+      claims?: readonly HistoryEntry[];
+      webSearch?: { maxResults: number };
+    },
+    acc: { costUsd: number; queries: string[]; results: SearchResult[] },
+  ): Promise<void> {
+    const { round, agentId } = args;
+    const queries = await planQueries(round, agentId, args.agentRole ?? agentId, args.claims);
+    const provider = getSearchProvider();
+    const depth = args.claims ? "advanced" : searchDepth();
+    const maxResults = args.webSearch?.maxResults ?? webSearchMaxResults();
+    for (const q of queries) {
+      emit(round, agentId, "SEARCHING", 0, {
+        query: q,
+        statusMessage: `Searching: ${q}`,
+        provider: "tavily",
+      });
+      const ckey = searchCacheKey({ provider: provider.name, query: q, maxResults, depth });
+      let res = searchCacheGet(d.db, ckey);
+      if (!res) {
+        try {
+          res = await searchWithRetry(() => provider.search(q, { maxResults, depth }));
+        } catch (e) {
+          throw new SearchFailure(e instanceof Error ? e.message : String(e));
+        }
+        searchCacheSet(d.db, ckey, res);
+      }
+      acc.queries.push(q);
+      acc.results.push(...res.results);
+      acc.costUsd += res.costUsd;
+      recordSearchCost(res.costUsd, agentId);
+    }
+  }
+
   /** One LLM call with budget checks, FALLBACK events, persistence and SPEAKING/CONSENSUS output. */
   async function turn(args: {
     round: number;
@@ -175,7 +341,11 @@ export async function runDebate(
     maxTokens: number;
     rowAction: "SPEAKING" | "CONSENSUS" | "SUMMARY" | "FACT_CHECK" | "DIGEST";
     extraData?: Record<string, unknown>;
+    /** Marks a web-search turn (Tavily search-then-answer, or OpenRouter's web plugin). */
     webSearch?: { maxResults: number };
+    /** Peer claims to verify (fact-check pass): drives query planning and advanced depth. */
+    claims?: readonly HistoryEntry[];
+    agentRole?: string;
   }): Promise<string> {
     const { round, agentId } = args;
     // Reasoning is billed as output: reserve it separately so it can't starve the answer.
@@ -189,6 +359,33 @@ export async function runDebate(
       if (capable.length > 0) models = capable;
       else messages = stripMedia(messages);
     }
+    // Tavily: search first and inject results; on failure fall back to OpenRouter's web plugin.
+    let webSearch = args.webSearch;
+    let searchTool = "web_search";
+    let searchCostUsd = 0;
+    let searchQueries: string[] = [];
+    let searchCitations: { url: string; title?: string }[] | undefined;
+    if (args.webSearch && searchBackend() === "tavily") {
+      const acc = { costUsd: 0, queries: [] as string[], results: [] as SearchResult[] };
+      try {
+        await tavilySearch(args, acc);
+        const ctx = formatSearchContext(acc.results, searchContextMaxChars());
+        if (ctx.block) messages = appendToLastUser(messages, ctx.block);
+        searchCitations = sanitizeCitations(ctx.used);
+        webSearch = undefined;
+        searchTool = "web_search:tavily";
+      } catch (e) {
+        if (!(e instanceof SearchFailure)) throw e;
+        emit(round, agentId, "FALLBACK", 0, {
+          tool: "web_search",
+          from: "tavily",
+          to: "openrouter",
+          reason: e.message,
+        });
+      }
+      searchCostUsd = acc.costUsd;
+      searchQueries = acc.queries;
+    }
     const promptEstimate = estimatePromptTokens(messages);
     budget.assertCanSpend(maxTokens + promptEstimate, agentId);
 
@@ -197,12 +394,13 @@ export async function runDebate(
     let usage: LLMUsage | undefined;
     let truncated = false;
     const citations: { url: string; title?: string }[] = [];
-    if (args.webSearch) {
+    if (webSearch) {
       emit(round, agentId, "SEARCHING", 0, { statusMessage: "Searching the web…" });
     }
     const startedAt = Date.now();
+    // The key covers the final messages, so injected search context is part of it.
     const key = args.webSearch
-      ? cacheKey({ tool: "web_search", maxResults: args.webSearch.maxResults, models, messages })
+      ? cacheKey({ tool: searchTool, maxResults: args.webSearch.maxResults, models, messages })
       : undefined;
     const hit = key ? cacheGet(d.db, key) : undefined;
     let cached = false;
@@ -212,13 +410,14 @@ export async function runDebate(
       reasoning = hit.reasoning ?? "";
       citations.push(...hit.citations);
     } else {
+      if (searchCitations) citations.push(...searchCitations);
       const consume = async (msgs: ChatMessage[], mdls: string[]) => {
         for await (const c of d.llm.streamChat({
           messages: msgs,
           models: mdls,
           maxTokens,
           reasoning: { maxTokens: reasoningMax },
-          webSearch: args.webSearch,
+          webSearch,
         })) {
           if (c.type === "text") text += c.delta;
           else if (c.type === "reasoning") reasoning += c.delta;
@@ -237,6 +436,7 @@ export async function runDebate(
         reasoning = "";
         truncated = false;
         citations.length = 0;
+        if (searchCitations) citations.push(...searchCitations);
         await consume(stripMedia(messages), args.models);
       }
       if (key && text) {
@@ -279,6 +479,7 @@ export async function runDebate(
       emit(round, agentId, "SPEAKING", tokens, {
         ...args.extraData,
         ...(args.webSearch ? { citations } : {}),
+        ...(searchQueries.length ? { searchQueries, searchCostUsd, searchProvider: "tavily" } : {}),
         ...(cached ? { cached: true } : {}),
         ...(truncated ? { truncated: true } : {}),
         message: text,
@@ -374,6 +575,7 @@ export async function runDebate(
           messages,
           maxTokens: agentMax,
           rowAction: "SPEAKING",
+          agentRole: agent.role,
           webSearch:
             searchEnabled && (round === 1 || plan.complexityScore >= 5)
               ? { maxResults: webSearchMaxResults() }
@@ -406,6 +608,8 @@ export async function runDebate(
           rowAction: "FACT_CHECK",
           extraData: { factCheck: true },
           webSearch: searchEnabled ? { maxResults: webSearchMaxResults() } : undefined,
+          claims,
+          agentRole: checker.role,
         });
         factCheck = verdict.trim() || undefined;
       }
