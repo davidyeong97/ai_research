@@ -2,13 +2,14 @@ import { textOf, type MessageContent } from "@/lib/council/llm";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { proxy } from "@/proxy";
 import { POST as login, resetLoginLimiter } from "@/app/api/login/route";
 import { EventBus } from "@/lib/council/bus";
 import { MockLLMClient, type MockResponse } from "@/lib/council/llm";
 import { setLLMClient } from "@/lib/council/quests";
+import { MockSearchProvider, SearchError, searchBackend, setSearchProvider } from "@/lib/council/search";
 import { dropControl } from "@/lib/council/control";
 import { recoverStrandedQuests } from "@/lib/council/recovery";
 import { createDb } from "@/lib/db";
@@ -57,7 +58,9 @@ function setup(opts: {
   llm = new MockLLMClient((p) =>
     textOf(p.messages[0].content).includes("Lead Orchestrator")
       ? JSON.stringify({ domain: opts.domain ?? "coding", complexity: opts.complexity })
-      : (opts.reply?.() ?? "a council reply"),
+      : p.jsonMode
+        ? JSON.stringify({ queries: ["e2e query one", "e2e query two"] })
+        : (opts.reply?.() ?? "a council reply"),
   );
   setLLMClient(llm);
 }
@@ -145,6 +148,7 @@ beforeAll(async () => {
 afterAll(() => {
   delete process.env.UPLOADS_DIR;
   setLLMClient(undefined);
+  setSearchProvider(undefined);
   if (origPw === undefined) delete process.env.APP_PASSWORD;
   else process.env.APP_PASSWORD = origPw;
   if (origCost === undefined) delete process.env.MAX_COST_USD_PER_QUEST;
@@ -153,6 +157,10 @@ afterAll(() => {
 });
 beforeEach(() => {
   delete process.env.MAX_COST_USD_PER_QUEST;
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  setSearchProvider(undefined);
 });
 
 describe("full quest flow (mock LLM)", () => {
@@ -231,6 +239,76 @@ describe("full quest flow (mock LLM)", () => {
     expect(e2.some((e) => e.action === "SPEAKING" && e.data.cached === true)).toBe(true);
     // No new search-backed LLM calls were made for the repeat.
     expect(llm.calls.filter((c) => c.webSearch)).toHaveLength(searchCalls);
+  });
+
+  it("with TAVILY_API_KEY, search goes through Tavily: queries, citations, cost, then cache", async () => {
+    vi.stubEnv("TAVILY_API_KEY", "test-key");
+    vi.stubEnv("WEB_SEARCH_PROVIDER", "");
+    expect(searchBackend()).toBe("tavily");
+    const sp = new MockSearchProvider();
+    setSearchProvider(sp);
+    setup({ complexity: 3, domain: "science" });
+
+    const first = await startQuest("Explain tavily photosynthesis");
+    await finished(first.questId);
+    const e1 = bus.replay(first.questId);
+    expect(e1.at(-1)!.action).toBe("DONE");
+    expect(llm.calls.some((c) => c.webSearch)).toBe(false);
+    const searching = e1.filter((e) => e.action === "SEARCHING");
+    expect(searching.length).toBeGreaterThan(0);
+    expect(searching.every((e) => e.data.provider === "tavily")).toBe(true);
+    expect(searching.map((e) => e.data.query)).toContain("e2e query one");
+    const speaking = e1.filter((e) => e.action === "SPEAKING" && e.data.searchQueries);
+    expect(speaking.length).toBeGreaterThan(0);
+    expect(speaking[0].data.citations).toEqual([
+      { url: "https://example.com/a", title: "Example A" },
+      { url: "https://example.com/b", title: "Example B" },
+    ]);
+    expect(sp.calls.length).toBeGreaterThan(0);
+    const spent = sp.calls.length * 0.008;
+    const js = await (await exportQuest(first.questId, "json")).json();
+    expect(js.session.totalCostUsd).toBeGreaterThanOrEqual(spent - 1e-9);
+
+    // Repeat quest: search + answer served from the cache, no new Tavily calls.
+    const callsBefore = sp.calls.length;
+    const second = await startQuest("Explain tavily photosynthesis");
+    await finished(second.questId);
+    const e2 = bus.replay(second.questId);
+    expect(e2.at(-1)!.action).toBe("DONE");
+    expect(sp.calls).toHaveLength(callsBefore);
+    expect(e2.some((e) => e.action === "SPEAKING" && e.data.cached === true)).toBe(true);
+  });
+
+  it("a forced Tavily failure falls back to the OpenRouter web plugin", async () => {
+    vi.stubEnv("TAVILY_API_KEY", "test-key");
+    vi.stubEnv("WEB_SEARCH_PROVIDER", "");
+    const sp = new MockSearchProvider();
+    sp.error = new SearchError("forced failure", { status: 400, retryable: false });
+    setSearchProvider(sp);
+    setup({ complexity: 3, domain: "science" });
+
+    const { questId } = await startQuest("Explain fallback photosynthesis");
+    await finished(questId);
+    const ev = bus.replay(questId);
+    expect(ev.at(-1)!.action).toBe("DONE");
+    const fb = ev.find((e) => e.action === "FALLBACK" && e.data.tool === "web_search")!;
+    expect(fb.data).toMatchObject({ from: "tavily", to: "openrouter", reason: "forced failure" });
+    expect(llm.calls.some((c) => c.webSearch)).toBe(true);
+  });
+
+  it("without TAVILY_API_KEY the backend is openrouter and Tavily is never called", async () => {
+    vi.stubEnv("TAVILY_API_KEY", "");
+    vi.stubEnv("WEB_SEARCH_PROVIDER", "");
+    expect(searchBackend()).toBe("openrouter");
+    const sp = new MockSearchProvider();
+    setSearchProvider(sp);
+    setup({ complexity: 3, domain: "science" });
+
+    const { questId } = await startQuest("Explain keyless photosynthesis");
+    await finished(questId);
+    expect(bus.replay(questId).at(-1)!.action).toBe("DONE");
+    expect(sp.calls).toHaveLength(0);
+    expect(llm.calls.some((c) => c.webSearch)).toBe(true);
   });
 
   it("pause / inject / resume via /control", async () => {

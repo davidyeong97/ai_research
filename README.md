@@ -62,7 +62,7 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 - **Multi-Provider Support**: Pluggable backend adapter pattern supporting Anthropic, OpenAI, Google Gemini, xAI Grok, Alibaba Qwen, Moonshot Kimi, DeepSeek, and local models (Ollama).
 - **Agent Capabilities**:
   - **Thinking/Scratchpad**: Emits visual reasoning events before submitting finalized messages.
-  - **Web Search & Fact Checking**: Performs web queries in sandboxed tool environments and cross-verifies statements made by peer agents.
+  - **Web Search & Fact Checking**: Performs web queries via Tavily (OpenRouter web plugin as fallback), treating all results as untrusted and cross-verifies statements made by peer agents.
   - **Attachments**: Quests can include images, PDFs and text/code files (untrusted, sanitized; vision-capable models see raw images, others get a lead-written digest). See [Attachments](#attachments).
 
 ### 3.3 Game-Like UI / UX Concepts
@@ -192,7 +192,7 @@ When a user submits a prompt, a **Lead AI Orchestrator** analyzes the task compl
 ### Phase 2: Discussion Protocol, Tools & HITL
 
 - [x] Implement multi-turn debate loops and context truncation/summarization.
-- [x] Add sandboxed web search tool pipeline.
+- [x] Add sandboxed web search tool pipeline (Tavily search-then-answer, with OpenRouter's web plugin as fallback).
 - [x] Add fact-checking tool pipeline (after round 1 a fact-checker agent verifies peers' claims, emitting `FACT_CHECKING`; the verdict feeds later rounds).
 - [x] Implement Human-In-The-Loop pause/resume/inject mechanisms.
 
@@ -224,6 +224,18 @@ npm run start:lan              # same as: next start -H 0.0.0.0
 ```
 
 Required env vars: `APP_PASSWORD` (shared login password; the app refuses to serve without it) and `OPENROUTER_API_KEY` (server-side only). Use `npm start` instead of `start:lan` to listen on localhost only.
+
+**Web search (optional but recommended):** set `TAVILY_API_KEY` (server-side only) to use [Tavily](https://tavily.com) as the agent web search backend. Agents plan 1-3 queries, Tavily returns results, and they are sanitized, fenced as untrusted data and injected into the prompt; sources show up as citations. Without a key (or with `WEB_SEARCH_PROVIDER=openrouter`) the app uses OpenRouter's `web` plugin instead, which is also the automatic fallback if a Tavily call fails.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TAVILY_API_KEY` | unset | Enables Tavily; unset means the OpenRouter plugin is used |
+| `WEB_SEARCH_PROVIDER` | auto | `tavily` or `openrouter`; auto picks Tavily when a key is set |
+| `TAVILY_SEARCH_DEPTH` | `basic` | `basic` = 1 credit per search, `advanced` = 2 credits (the fact-check pass always uses advanced) |
+| `TAVILY_COST_PER_CREDIT_USD` | `0.008` | USD per Tavily credit, used for cost tracking and `MAX_COST_USD_PER_QUEST` |
+| `WEB_SEARCH_MAX_RESULTS` | `3` | Results fed to agents per search |
+
+Tavily gives free monthly credits, enough for casual use; beyond that, credits are billed. Search cost is included in each quest's total cost. Search results are cached for 24 hours (`TOOL_CACHE_*`). Optional live check: `TAVILY_API_KEY=... npx vitest run lib/council/search/tavily.live.test.ts` (skipped when no key is set).
 
 Then open `http://<host-vpn-ip>:3000` on your phone and log in with `APP_PASSWORD`.
 
