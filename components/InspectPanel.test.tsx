@@ -119,3 +119,27 @@ describe("full text, thinking and cut-off marker", () => {
     expect(document.getElementById("inspect-thought")?.textContent).toContain(thinking);
   });
 });
+
+describe("search queries", () => {
+  const withSearch: TranscriptEntry = {
+    ...entry,
+    searchQueries: ["rust vs go", "go generics"],
+    searchProvider: "tavily",
+    searchCostUsd: 0.016,
+  };
+  it("transcript shows a compact searched line", () => {
+    render(<TranscriptPanel entries={[withSearch]} />);
+    expect(screen.getByTestId("search-queries").textContent).toBe("🔎 searched: rust vs go · go generics");
+  });
+  it("transcript omits the line without queries", () => {
+    render(<TranscriptPanel entries={[entry]} />);
+    expect(screen.queryByTestId("search-queries")).toBeNull();
+  });
+  it("inspect panel lists queries, provider and cost", () => {
+    render(<InspectPanel agent={agent} entry={withSearch} onClose={() => {}} />);
+    const sec = screen.getByTestId("inspect-search");
+    expect(sec.textContent).toContain("Tavily");
+    expect(sec.textContent).toContain("$0.0160");
+    expect(sec.textContent).toContain("go generics");
+  });
+});

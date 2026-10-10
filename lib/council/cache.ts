@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { eq, lte } from "drizzle-orm";
 import { getDb, schema, type DB } from "../db";
+import type { SearchResponse } from "./search/types";
 import { textOf, type ChatMessage, type MessageContent } from "./llm";
 
 export interface CachedToolResult {
@@ -88,4 +89,55 @@ export function cacheSet(
 /** Delete expired rows; returns the number removed. */
 export function purgeExpired(db: DB = getDb(), now = Date.now()): number {
   return db.delete(schema.toolCache).where(lte(schema.toolCache.expiresAt, now)).run().changes;
+}
+
+/** Key for cached search responses; namespaced so it never collides with LLM-answer keys. */
+export function searchCacheKey(req: {
+  provider: string;
+  query: string;
+  maxResults: number;
+  depth: string;
+  topic?: string;
+  timeRange?: string;
+}): string {
+  const canonical = JSON.stringify({
+    kind: "search",
+    provider: req.provider,
+    query: norm(req.query),
+    maxResults: req.maxResults,
+    depth: req.depth,
+    topic: req.topic ?? "general",
+    timeRange: req.timeRange ?? null,
+  });
+  return "search:" + createHash("sha256").update(canonical).digest("hex");
+}
+
+/** Cached hits cost nothing: credits and costUsd are zeroed. */
+export function searchCacheGet(
+  db: DB = getDb(),
+  key: string,
+  now = Date.now(),
+): SearchResponse | undefined {
+  if (!cacheEnabled()) return undefined;
+  const row = db.select().from(schema.toolCache).where(eq(schema.toolCache.key, key)).get();
+  if (!row) return undefined;
+  if (row.expiresAt <= now) {
+    db.delete(schema.toolCache).where(eq(schema.toolCache.key, key)).run();
+    return undefined;
+  }
+  return { ...(row.value as SearchResponse), credits: 0, costUsd: 0 };
+}
+
+export function searchCacheSet(
+  db: DB = getDb(),
+  key: string,
+  value: SearchResponse,
+  now = Date.now(),
+): void {
+  if (!cacheEnabled()) return;
+  const expiresAt = now + cacheTtlMs();
+  db.insert(schema.toolCache)
+    .values({ key, value, createdAt: now, expiresAt })
+    .onConflictDoUpdate({ target: schema.toolCache.key, set: { value, createdAt: now, expiresAt } })
+    .run();
 }

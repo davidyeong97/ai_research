@@ -14,6 +14,16 @@ function str(v: unknown): string | undefined {
   return typeof v === "string" && v ? v : undefined;
 }
 
+/** Sum of per-turn search costs recorded on SPEAKING events. */
+export function totalSearchCost(events: CouncilEvent[]): number {
+  let n = 0;
+  for (const e of events) {
+    const c = (e.data as Record<string, unknown> | undefined)?.searchCostUsd;
+    if (typeof c === "number" && Number.isFinite(c)) n += c;
+  }
+  return n;
+}
+
 export function toMarkdown(
   session: typeof schema.sessions.$inferSelect,
   plan: typeof schema.orchestrationPlans.$inferSelect | undefined,
@@ -77,6 +87,13 @@ export function toMarkdown(
       else if (d.guidance) line = `**[director guidance]** ${msg}`;
       else if (d.factCheck) line = `**[fact-check] ${who}:** ${msg}`;
       else line = `**${who}:** ${msg}`;
+      const qs = Array.isArray(d.searchQueries)
+        ? d.searchQueries.filter((q): q is string => typeof q === "string" && q !== "")
+        : [];
+      if (qs.length) {
+        const sc = typeof d.searchCostUsd === "number" ? ` ($${d.searchCostUsd.toFixed(4)})` : "";
+        line += `\n\n_🔎 searched: ${qs.map((q) => q.replace(/\s+/g, " ")).join(" · ")}${sc}_`;
+      }
     } else if (e.action === "DONE") {
       final = str(d.finalAnswer) ?? final;
       continue;
@@ -96,6 +113,7 @@ export function toMarkdown(
     "",
     `- Tokens: ${session.totalTokens}`,
     `- Cost (USD): $${session.totalCostUsd.toFixed(4)}`,
+    `- Search cost (USD): $${totalSearchCost(events).toFixed(4)}`,
     "",
   );
   return out.join("\n");
@@ -141,8 +159,31 @@ export function buildExport(db: DB, id: string, format: "md" | "json"): string |
           }),
       ),
     ];
+    const searchQueriesByTurn = events.flatMap((e) => {
+      const d = (e.data ?? {}) as Record<string, unknown>;
+      if (!Array.isArray(d.searchQueries) || !d.searchQueries.length) return [];
+      return [
+        {
+          eventId: e.id,
+          round: e.round,
+          agentId: e.agentId,
+          searchQueries: d.searchQueries.filter((q): q is string => typeof q === "string"),
+          searchCostUsd: typeof d.searchCostUsd === "number" ? d.searchCostUsd : 0,
+          searchProvider: typeof d.searchProvider === "string" ? d.searchProvider : undefined,
+        },
+      ];
+    });
     return JSON.stringify(
-      { session, plan: plan ?? null, attachments, recalledMemoryIds, events, agentMessages },
+      {
+        session,
+        plan: plan ?? null,
+        attachments,
+        recalledMemoryIds,
+        events,
+        agentMessages,
+        searchQueriesByTurn,
+        totalSearchCostUsd: totalSearchCost(events),
+      },
       null,
       2,
     );

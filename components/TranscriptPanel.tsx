@@ -19,6 +19,11 @@ const KIND_STYLE: Record<TranscriptEntry["kind"], string> = {
   memory: "border-pink-300/70 bg-pink-950/50 text-pink-50",
 };
 
+/** Compact "🔎 searched: q1 · q2" line. */
+export function searchedLine(queries: string[]): string {
+  return `🔎 searched: ${queries.join(" · ")}`;
+}
+
 export function TranscriptPanel({
   entries,
   finalAnswer,
@@ -133,6 +138,14 @@ export function TranscriptPanel({
                 </div>
               </details>
             )}
+            {e.kind === "message" && e.searchQueries?.length ? (
+              <p
+                data-testid="search-queries"
+                className="mt-1 break-words text-[10px] text-sky-200"
+              >
+                {searchedLine(e.searchQueries)}
+              </p>
+            ) : null}
             {e.kind === "message" && (
               <div className="mt-1 flex flex-wrap items-center gap-1">
                 {(e.citations ?? []).slice(0, 3).map((c, i) => {

@@ -18,6 +18,11 @@ export function runningCost(s: QuestState): number {
   return s.agents.reduce((n, a) => n + a.costUsd, 0);
 }
 
+/** Total search spend so far, from SPEAKING entries. */
+export function searchCost(s: QuestState): number {
+  return s.transcript.reduce((n, t) => n + (t.searchCostUsd ?? 0), 0);
+}
+
 export function StatsBar({
   state,
   onOpenMemory,
@@ -61,6 +66,15 @@ export function StatsBar({
       <span data-testid="stats-cost" className="flex-none whitespace-nowrap">
         ${runningCost(state).toFixed(3)}
       </span>
+      {searchCost(state) > 0 ? (
+        <span
+          data-testid="stats-search-cost"
+          title="Web search cost (included in total)"
+          className="flex-none whitespace-nowrap text-sky-200"
+        >
+          🔎${searchCost(state).toFixed(3)}
+        </span>
+      ) : null}
       <span
         data-testid="stats-phase"
         className="flex-none whitespace-nowrap border border-black bg-amber-300 px-1.5 py-0.5 uppercase text-black"

@@ -263,3 +263,48 @@ describe("long and truncated replies", () => {
     expect(b.truncated).toBeUndefined();
   });
 });
+
+describe("questReducer search queries", () => {
+  it("tracks the active query and attaches search data to the message", () => {
+    let s = run(
+      started(),
+      ev({ agentId: "a", action: "SEARCHING", data: { query: " q1 ", provider: "tavily", statusMessage: "Searching: q1" } }),
+    );
+    expect(s.agents.find((x) => x.id === "a")).toMatchObject({
+      searchQuery: "q1",
+      lastSearchQueries: ["q1"],
+      lastSearchProvider: "tavily",
+    });
+    s = run(s, ev({ agentId: "a", action: "SEARCHING", data: { query: "q2", provider: "tavily" } }));
+    expect(s.agents.find((x) => x.id === "a")?.lastSearchQueries).toEqual(["q1", "q2"]);
+    s = run(
+      s,
+      ev({
+        agentId: "a",
+        action: "SPEAKING",
+        data: { message: "hi", searchQueries: ["q1", "q2", 5], searchCostUsd: 0.016, searchProvider: "tavily" },
+      }),
+    );
+    const a = s.agents.find((x) => x.id === "a");
+    expect(a?.searchQuery).toBeUndefined();
+    expect(a?.lastSearchQueries).toEqual(["q1", "q2"]);
+    expect(a?.lastSearchCostUsd).toBe(0.016);
+    expect(s.transcript.at(-1)).toMatchObject({
+      searchQueries: ["q1", "q2"],
+      searchCostUsd: 0.016,
+      searchProvider: "tavily",
+    });
+  });
+
+  it("ignores malformed search data", () => {
+    const s = run(
+      started(),
+      ev({ agentId: "a", action: "SEARCHING", data: { query: 42, provider: {} } }),
+      ev({ agentId: "a", action: "SPEAKING", data: { message: "hi", searchQueries: "nope", searchCostUsd: "x" } }),
+    );
+    const last = s.transcript.at(-1);
+    expect(last?.searchQueries).toBeUndefined();
+    expect(last?.searchCostUsd).toBeUndefined();
+    expect(s.agents.find((x) => x.id === "a")?.lastSearchQueries).toBeUndefined();
+  });
+});

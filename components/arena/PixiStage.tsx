@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Application, Container, Graphics, Sprite, Text, type Texture } from "pixi.js";
 import type { AgentState, InspectSelection } from "@/lib/client/questReducer";
 import { orderAgents, seatPositions, spriteScale, tableGeometry } from "./layout";
-import { placeBubble, truncateLine, type Rect } from "./bubbles";
+import { placeBubble, searchBubbleLine, truncateLine, type Rect } from "./bubbles";
 import { badgeText, statusLabel } from "./statusLabels";
 import { createAvatarTexture, SPRITE_SIZE } from "./sprites";
 
@@ -355,7 +355,8 @@ export default function PixiStage({
         }
 
         // Speech bubble.
-        const line = truncateLine(a.latestLine);
+        const searching = a.status === "SEARCHING" ? searchBubbleLine(a.searchQuery, w < 480) : undefined;
+        const line = searching ?? truncateLine(a.latestLine);
         if (!line) {
           v.bubble.visible = false;
           v.line = "";

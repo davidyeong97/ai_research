@@ -7,6 +7,12 @@ export function truncateLine(text: string, max = BUBBLE_MAX_CHARS): string {
   return t.slice(0, Math.max(0, max - 1)).trimEnd() + "…";
 }
 
+/** Bubble text while searching: the active query, shortened on narrow stages. */
+export function searchBubbleLine(query: string | undefined, narrow: boolean): string | undefined {
+  if (!query?.trim()) return undefined;
+  return `🔎 ${truncateLine(query, narrow ? 40 : 80)}`;
+}
+
 export interface Rect {
   x: number;
   y: number;
