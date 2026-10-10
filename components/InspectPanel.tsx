@@ -31,6 +31,10 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+export function providerLabel(p: string): string {
+  return p.toLowerCase() === "tavily" ? "Tavily" : p.toLowerCase() === "openrouter" ? "OpenRouter" : p;
+}
+
 export function CitationList({ citations }: { citations: Citation[] }) {
   return (
     <ul className="space-y-1" data-testid="citation-list">
@@ -140,6 +144,9 @@ export function InspectPanel({
   const latency = entry ? entry.latencyMs : agent?.lastLatencyMs;
   const thought = entry ? entry.thought : agent?.lastThought;
   const citations = (entry ? entry.citations : agent?.lastCitations) ?? [];
+  const searchQueries = (entry ? entry.searchQueries : agent?.lastSearchQueries) ?? [];
+  const searchProvider = entry ? entry.searchProvider : agent?.lastSearchProvider;
+  const searchCost = entry ? entry.searchCostUsd : agent?.lastSearchCostUsd;
   const text = entry?.text ?? agent?.latestLine;
   const truncated = entry ? entry.truncated === true : agent?.lastTruncated === true;
 
@@ -249,6 +256,23 @@ export function InspectPanel({
             </div>
           )}
         </section>
+
+        {searchQueries.length > 0 && (
+          <section data-testid="inspect-search">
+            <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-300">
+              Searches
+              {searchProvider ? ` · ${providerLabel(searchProvider)}` : ""}
+              {searchCost !== undefined ? ` · $${searchCost.toFixed(4)}` : ""}
+            </h3>
+            <ul className="list-disc space-y-0.5 pl-4 text-xs text-sky-200">
+              {searchQueries.map((q, i) => (
+                <li key={`${q}-${i}`} className="break-words">
+                  {q}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section>
           <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-300">

@@ -20,6 +20,12 @@ export interface AgentState {
   lastThought?: string;
   lastTruncated?: boolean;
   lastCitations?: Citation[];
+  /** Query currently being searched (set while status is SEARCHING). */
+  searchQuery?: string;
+  /** Queries searched for the latest turn. */
+  lastSearchQueries?: string[];
+  lastSearchProvider?: string;
+  lastSearchCostUsd?: number;
   lastLatencyMs?: number;
 }
 
@@ -74,6 +80,9 @@ export interface TranscriptEntry {
   /** Output hit the token limit and was cut off. */
   truncated?: boolean;
   citations?: Citation[];
+  searchQueries?: string[];
+  searchProvider?: string;
+  searchCostUsd?: number;
   model?: string;
   costUsd?: number;
   latencyMs?: number;
@@ -81,6 +90,12 @@ export interface TranscriptEntry {
   /** Full injected (fenced) memory block, for kind "memory". */
   block?: string;
   memories?: RecalledMemoryRef[];
+}
+
+function parseStrings(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim());
+  return out.length ? out : undefined;
 }
 
 export type QuestPhase = "idle" | "running" | "done" | "error";
@@ -241,11 +256,23 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
     case "CONSENSUS": {
       const status = str(d.statusMessage);
       const action = e.action;
-      next.agents = patchAgent(state.agents, e.agentId, (a) => ({
-        ...a,
-        status: action,
-        latestLine: status ?? a.latestLine,
-      }));
+      const query = e.action === "SEARCHING" ? str(d.query)?.trim() || undefined : undefined;
+      const provider = e.action === "SEARCHING" ? str(d.provider) : undefined;
+      next.agents = patchAgent(state.agents, e.agentId, (a) => {
+        const prior = a.status === "SEARCHING" ? (a.lastSearchQueries ?? []) : [];
+        return {
+          ...a,
+          status: action,
+          latestLine: status ?? a.latestLine,
+          searchQuery: query,
+          ...(query
+            ? {
+                lastSearchQueries: prior.includes(query) ? prior : [...prior, query],
+                lastSearchProvider: provider ?? a.lastSearchProvider,
+              }
+            : {}),
+        };
+      });
       if (status) next.transcript = [...state.transcript, entry("status", status)];
       return next;
     }
@@ -356,6 +383,9 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
       const thought = str(d.thought)?.trim() || undefined;
       const citations = parseCitations(d.citations);
       const latencyMs = num(d.latencyMs);
+      const searchQueries = parseStrings(d.searchQueries);
+      const searchProvider = str(d.searchProvider);
+      const searchCostUsd = num(d.searchCostUsd);
       const truncated = d.truncated === true;
       next.agents = patchAgent(state.agents, e.agentId, (a) => ({
         ...a,
@@ -368,6 +398,10 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
         lastThought: thought ?? a.lastThought,
         lastTruncated: truncated,
         lastCitations: citations ?? a.lastCitations,
+        searchQuery: undefined,
+        lastSearchQueries: searchQueries ?? (a.status === "SEARCHING" ? a.lastSearchQueries : undefined),
+        lastSearchProvider: searchProvider ?? (searchQueries ? undefined : a.lastSearchProvider),
+        lastSearchCostUsd: searchCostUsd,
         lastLatencyMs: latencyMs ?? a.lastLatencyMs,
       }));
       next.transcript = [
@@ -377,6 +411,9 @@ function applyEvent(state: QuestState, e: CouncilEvent): QuestState {
           thought,
           ...(truncated ? { truncated: true } : {}),
           citations,
+          ...(searchQueries ? { searchQueries } : {}),
+          ...(searchProvider ? { searchProvider } : {}),
+          ...(searchCostUsd !== undefined ? { searchCostUsd } : {}),
           model: str(d.model),
           costUsd: num(d.costUsd),
           latencyMs,

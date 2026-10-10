@@ -58,7 +58,9 @@ describe("GET /api/quests/[id]/export", () => {
       "events",
       "plan",
       "recalledMemoryIds",
+      "searchQueriesByTurn",
       "session",
+      "totalSearchCostUsd",
     ]);
     expect(body.session.id).toBe(questId);
     expect(body.events.length).toBeGreaterThan(0);
@@ -95,5 +97,35 @@ describe("GET /api/quests/[id]/export", () => {
     expect(text).toContain("- [preference] likes concise answers (m1)");
     const body = await (await get(questId, "json")).json();
     expect(body.recalledMemoryIds).toEqual(["m1"]);
+  });
+
+  it("includes search queries and total search cost", async () => {
+    const db = createDb(":memory:");
+    const bus = new EventBus(db);
+    (globalThis as G).__councilDb = db;
+    (globalThis as G).__councilBus = bus;
+    setLLMClient(
+      new MockLLMClient((p) =>
+        textOf(p.messages[0].content).includes("Lead Orchestrator")
+          ? JSON.stringify({ domain: "coding", complexity: 3 })
+          : "reply text",
+      ),
+    );
+    const { questId, done } = await createQuest("Search q", {});
+    await done;
+    bus.publish({
+      questId,
+      round: 1,
+      agentId: "lead",
+      action: "SPEAKING",
+      tokensUsed: 1,
+      data: { message: "found it", searchQueries: ["alpha", "beta"], searchCostUsd: 0.016 },
+    });
+    const text = await (await get(questId)).text();
+    expect(text).toContain("🔎 searched: alpha · beta ($0.0160)");
+    expect(text).toContain("- Search cost (USD): $0.0160");
+    const body = await (await get(questId, "json")).json();
+    expect(body.totalSearchCostUsd).toBeCloseTo(0.016);
+    expect(body.searchQueriesByTurn.at(-1)).toMatchObject({ searchQueries: ["alpha", "beta"] });
   });
 });
