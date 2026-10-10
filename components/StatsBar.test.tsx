@@ -91,3 +91,11 @@ describe("StatsBar", () => {
     expect(screen.getByTestId("stats-cost").textContent).toBe("$0.500");
   });
 });
+
+describe("StatsBar search cost", () => {
+  it("shows a search chip when search cost was incurred", () => {
+    const s = run(ev(1, 1, "SPEAKING", { message: "x", costUsd: 0.01, searchCostUsd: 0.016 }));
+    render(<StatsBar state={s} />);
+    expect(screen.getByTestId("stats-search-cost").textContent).toContain("0.016");
+  });
+});
